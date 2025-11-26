@@ -1,0 +1,43 @@
+========================================
+ENABLE WINDOWS DEVELOPER MODE
+========================================
+
+Flutter requires Developer Mode to be enabled on Windows for building apps.
+This is a one-time setting that allows Flutter to create symbolic links.
+
+HOW TO ENABLE:
+
+Option 1 - Using Settings GUI:
+1. Press Windows Key
+2. Type "Developer Settings" and press Enter
+3. OR run this command to open it directly:
+   start ms-settings:developers
+4. Toggle "Developer Mode" to ON
+5. Confirm any prompts
+6. Wait for Windows to apply the changes (may take a minute)
+
+Option 2 - Quick Open:
+Press Win+R and paste this:
+ms-settings:developers
+
+Then toggle Developer Mode to ON.
+
+WHAT THIS DOES:
+- Allows apps to create symbolic links (required by Flutter)
+- Enables other developer tools
+- Does NOT affect system security when used with trusted apps like Flutter
+- This is a Microsoft-recommended setting for developers
+
+AFTER ENABLING:
+Close your terminal and reopen it, then run:
+  build_windows.bat
+
+Or manually:
+  flutter build windows --release
+
+========================================
+
+If you're concerned about security:
+Developer Mode is safe when you're only building your own apps.
+You can disable it after building if you prefer, but you'll need to
+re-enable it each time you want to build.

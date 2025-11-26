@@ -1,0 +1,170 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+
+class OllamaService {
+  final String baseUrl;
+  final String model;
+
+  OllamaService({
+    this.baseUrl = 'http://localhost:11434',
+    this.model = 'llama3.2:3b',
+  });
+
+  /// Test if Ollama is available
+  Future<bool> isAvailable() async {
+    try {
+      final response = await http.get(Uri.parse(baseUrl)).timeout(
+        const Duration(seconds: 2),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Ollama not available: $e');
+      return false;
+    }
+  }
+
+  /// Analyze a scene using the local LLM
+  Future<Map<String, dynamic>?> analyzeScene(String sceneText) async {
+    if (sceneText.trim().isEmpty) return null;
+
+    try {
+      final prompt = _buildAnalysisPrompt(sceneText);
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/generate'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'model': model,
+          'prompt': prompt,
+          'stream': false,
+          'options': {
+            'temperature': 0.3, // Lower for more consistent analysis
+            'num_predict': 500, // Limit response length
+          },
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final analysisText = data['response'] as String;
+        return _parseAnalysis(analysisText);
+      }
+    } catch (e) {
+      debugPrint('Scene analysis error: $e');
+    }
+
+    return null;
+  }
+
+  /// Build the analysis prompt for the LLM
+  String _buildAnalysisPrompt(String sceneText) {
+    return '''Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.
+
+Scene text:
+"""
+$sceneText
+"""
+
+Extract and return JSON with these fields:
+{
+  "characters": ["list of character names present"],
+  "setting": "physical location",
+  "time_of_day": "morning/afternoon/evening/night or unknown",
+  "pov": "whose perspective (character name or unknown)",
+  "tone": "brief emotional tone (1-2 words)",
+  "dialogue_percentage": estimated percentage (0-100),
+  "word_count": ${ sceneText.split(RegExp(r'\\s+')).length},
+  "echo_words": ["words repeated 3+ times"],
+  "senses": ["which senses engaged: sight/sound/touch/taste/smell"],
+  "stakes": "brief description of what's at risk",
+  "hunches": ["2-3 brief suggestions or observations about the scene - things like pacing, clarity, emotional resonance, missing elements, or opportunities"]
+}
+
+Respond with ONLY the JSON object, nothing else.''';
+  }
+
+  /// Parse the LLM response into structured data
+  Map<String, dynamic> _parseAnalysis(String analysisText) {
+    try {
+      // Try to extract JSON from the response
+      final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(analysisText);
+      if (jsonMatch != null) {
+        return json.decode(jsonMatch.group(0)!);
+      }
+
+      // If no JSON found, return the raw text
+      return {'raw_response': analysisText};
+    } catch (e) {
+      debugPrint('Failed to parse analysis: $e');
+      return {'error': 'Failed to parse analysis', 'raw_response': analysisText};
+    }
+  }
+
+  /// Quick character extraction (fallback without LLM)
+  List<String> extractCharactersSimple(String text) {
+    // Simple capitalized word detection
+    final capitalizedWords = RegExp(r'\b[A-Z][a-z]+\b').allMatches(text);
+    final names = <String>{};
+
+    for (final match in capitalizedWords) {
+      final word = match.group(0)!;
+      // Filter out common words that aren't names
+      if (!_commonWords.contains(word.toLowerCase())) {
+        names.add(word);
+      }
+    }
+
+    return names.toList()..sort();
+  }
+
+  /// Count echo words (words repeated 3+ times)
+  Map<String, int> findEchoWords(String text) {
+    final words = text.toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s]'), '')
+        .split(RegExp(r'\s+'));
+
+    final wordCounts = <String, int>{};
+    for (final word in words) {
+      if (word.length > 3 && !_stopWords.contains(word)) {
+        wordCounts[word] = (wordCounts[word] ?? 0) + 1;
+      }
+    }
+
+    // Return only words used 3+ times
+    return Map.fromEntries(
+      wordCounts.entries.where((e) => e.value >= 3),
+    );
+  }
+
+  /// Calculate dialogue percentage
+  int calculateDialoguePercentage(String text) {
+    final lines = text.split('\n');
+    int dialogueLines = 0;
+
+    for (final line in lines) {
+      if (line.trim().contains('"') || line.trim().contains("'")) {
+        dialogueLines++;
+      }
+    }
+
+    return lines.isEmpty ? 0 : ((dialogueLines / lines.length) * 100).round();
+  }
+
+  static final Set<String> _commonWords = {
+    'the', 'and', 'but', 'that', 'this', 'with', 'from', 'have',
+    'they', 'would', 'there', 'their', 'what', 'about', 'which',
+    'when', 'make', 'like', 'time', 'just', 'know', 'take', 'people',
+    'into', 'year', 'your', 'good', 'some', 'could', 'them', 'see',
+    'other', 'than', 'then', 'now', 'look', 'only', 'come', 'its',
+    'over', 'think', 'also', 'back', 'after', 'use', 'two', 'how',
+    'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want',
+    'because', 'any', 'these', 'give', 'day', 'most', 'us', 'chapter',
+  };
+
+  static final Set<String> _stopWords = {
+    'the', 'and', 'that', 'this', 'with', 'from', 'have', 'they',
+    'was', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her',
+    'his', 'she', 'had', 'has', 'said', 'been', 'will', 'more',
+  };
+}

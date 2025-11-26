@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export PATH=\"/c/src/flutter/bin:$PATH\")",
+      "Bash(flutter --version:*)",
+      "Bash(flutter doctor:*)",
+      "Bash(flutter config:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(chmod:*)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"E:\\Unity\\justwrite\\download_fonts.ps1\")",
+      "Bash(curl:*)",
+      "Bash(flutter build:*)",
+      "Bash(timeout 30 flutter build:*)",
+      "Bash(flutter create:*)",
+      "Bash(start ms-settings:developers)",
+      "Bash(cat:*)",
+      "Bash(flutter run:*)",
+      "Bash(flutter clean:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: Floe - AI-powered writing companion\n\nFloe is an AI-powered writing companion for novelists that provides real-time scene analysis with intelligent insights.\n\nFeatures:\n- AI scene analysis using local LLM (Ollama)\n- Real-time hunches and suggestions\n- Distraction-free writing interface\n- Focus mode with sentence highlighting\n- Automatic scene detection via standard manuscript formatting\n- Word count tracking and auto-save\n\nBuilt with Flutter for Windows (macOS and Linux support planned).\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

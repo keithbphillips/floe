@@ -1,0 +1,52 @@
+name: floe
+description: An AI-powered writing companion for novelists
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  provider: ^6.1.1
+
+  # Local storage for auto-save
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.1
+
+  # File operations
+  file_picker: ^6.1.1
+
+  # Markdown support
+  markdown: ^7.2.1
+
+  # Keyboard shortcuts
+  flutter_keyboard_visibility: ^6.0.0
+
+  # Window management for fullscreen
+  window_manager: ^0.3.7
+
+  # HTTP client for Ollama
+  http: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Include custom fonts for better readability
+  fonts:
+    - family: Lora
+      fonts:
+        - asset: assets/fonts/Lora-Regular.ttf
+        - asset: assets/fonts/Lora-Bold.ttf
+          weight: 700
+    - family: IBMPlexMono
+      fonts:
+        - asset: assets/fonts/IBMPlexMono-Regular.ttf

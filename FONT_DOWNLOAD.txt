@@ -1,0 +1,28 @@
+IMPORTANT: Download These Fonts Before Building
+===============================================
+
+For the app to build successfully, you need to download these free fonts:
+
+1. Lora (Serif font - for traditional novel writing)
+   Download: https://fonts.google.com/specimen/Lora
+   - Click "Download family"
+   - Extract the ZIP
+   - Copy these files to assets/fonts/:
+     * Lora-Regular.ttf
+     * Lora-Bold.ttf
+
+2. IBM Plex Mono (Monospace font - for draft/technical writing)
+   Download: https://fonts.google.com/specimen/IBM+Plex+Mono
+   - Click "Download family"
+   - Extract the ZIP
+   - Copy this file to assets/fonts/:
+     * IBMPlexMono-Regular.ttf
+
+Where to place them:
+E:\Unity\justwrite\assets\fonts\
+
+Quick links:
+- Lora: https://fonts.google.com/specimen/Lora
+- IBM Plex Mono: https://fonts.google.com/specimen/IBM+Plex+Mono
+
+Once you have the fonts, you can build with: flutter build windows --release
