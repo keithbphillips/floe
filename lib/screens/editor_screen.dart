@@ -96,17 +96,13 @@ class _EditorScreenState extends State<EditorScreen> {
 
     final isCtrlOrCmd = event.isControlPressed || event.isMetaPressed;
 
-    // Cmd/Ctrl + N : New document
-    if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyN) {
-      _newDocument();
+    // Cmd/Ctrl + M : Insert em dash
+    if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyM) {
+      _insertEmDash();
     }
-    // Cmd/Ctrl + O : Open document
-    else if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyO) {
-      _openDocument();
-    }
-    // Cmd/Ctrl + S : Save As
-    else if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyS) {
-      _saveAs();
+    // Cmd/Ctrl + I : Toggle italics (markdown style)
+    else if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyI) {
+      _toggleItalics();
     }
     // Cmd/Ctrl + , : Open settings
     else if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.comma) {
@@ -143,6 +139,89 @@ class _EditorScreenState extends State<EditorScreen> {
           _showFileMenu = !_showFileMenu;
         });
       }
+    }
+  }
+
+  void _insertEmDash() {
+    final selection = _controller.selection;
+    final text = _controller.text;
+    final emDash = '—';
+
+    if (selection.isValid) {
+      final newText = text.replaceRange(
+        selection.start,
+        selection.end,
+        emDash,
+      );
+
+      _controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(
+          offset: selection.start + emDash.length,
+        ),
+      );
+
+      // Update document
+      final document = context.read<DocumentProvider>();
+      document.updateContent(newText, selection.start + emDash.length);
+    }
+  }
+
+  void _toggleItalics() {
+    final selection = _controller.selection;
+    final text = _controller.text;
+
+    if (!selection.isValid) return;
+
+    // If there's a selection, wrap it with asterisks for markdown italics
+    if (selection.start != selection.end) {
+      final selectedText = text.substring(selection.start, selection.end);
+
+      // Check if already italicized
+      final beforeStart = selection.start > 0 ? text[selection.start - 1] : '';
+      final afterEnd = selection.end < text.length ? text[selection.end] : '';
+
+      String newText;
+      int newCursorPos;
+
+      if (beforeStart == '*' && afterEnd == '*') {
+        // Remove italics
+        newText = text.substring(0, selection.start - 1) +
+                  selectedText +
+                  text.substring(selection.end + 1);
+        newCursorPos = selection.start - 1;
+      } else {
+        // Add italics
+        newText = text.substring(0, selection.start) +
+                  '*$selectedText*' +
+                  text.substring(selection.end);
+        newCursorPos = selection.end + 2;
+      }
+
+      _controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newCursorPos),
+      );
+
+      // Update document
+      final document = context.read<DocumentProvider>();
+      document.updateContent(newText, newCursorPos);
+    } else {
+      // No selection - insert asterisks and position cursor between them
+      final newText = text.substring(0, selection.start) +
+                      '**' +
+                      text.substring(selection.start);
+
+      _controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(
+          offset: selection.start + 1,
+        ),
+      );
+
+      // Update document
+      final document = context.read<DocumentProvider>();
+      document.updateContent(newText, selection.start + 1);
     }
   }
 
