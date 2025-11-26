@@ -27,13 +27,13 @@ jobs:
       - name: Create Windows ZIP
         run: |
           cd build/windows/x64/runner/Release
-          Compress-Archive -Path * -DestinationPath ../../../../../justwrite-windows.zip
+          Compress-Archive -Path * -DestinationPath ../../../../../floe-windows.zip
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v3
         with:
-          name: justwrite-windows
-          path: justwrite-windows.zip
+          name: floe-windows
+          path: floe-windows.zip
 
   build-macos:
     runs-on: macos-latest
@@ -55,13 +55,13 @@ jobs:
       - name: Create macOS DMG
         run: |
           cd build/macos/Build/Products/Release
-          hdiutil create -volname "JustWrite" -srcfolder justwrite.app -ov -format UDZO ../../../../../justwrite-macos.dmg
+          hdiutil create -volname "Floe" -srcfolder floe.app -ov -format UDZO ../../../../../floe-macos.dmg
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v3
         with:
-          name: justwrite-macos
-          path: justwrite-macos.dmg
+          name: floe-macos
+          path: floe-macos.dmg
 
   build-linux:
     runs-on: ubuntu-latest
@@ -88,13 +88,13 @@ jobs:
       - name: Create Linux tarball
         run: |
           cd build/linux/x64/release
-          tar -czf ../../../../justwrite-linux.tar.gz bundle/
+          tar -czf ../../../../floe-linux.tar.gz bundle/
 
       - name: Upload Linux Artifact
         uses: actions/upload-artifact@v3
         with:
-          name: justwrite-linux
-          path: justwrite-linux.tar.gz
+          name: floe-linux
+          path: floe-linux.tar.gz
 
   create-release:
     needs: [build-windows, build-macos, build-linux]
@@ -108,9 +108,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            justwrite-windows/justwrite-windows.zip
-            justwrite-macos/justwrite-macos.dmg
-            justwrite-linux/justwrite-linux.tar.gz
+            floe-windows/floe-windows.zip
+            floe-macos/floe-macos.dmg
+            floe-linux/floe-linux.tar.gz
           draft: false
           prerelease: false
         env:
