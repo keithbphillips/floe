@@ -13,11 +13,11 @@ void main() async {
   // Initialize window manager for fullscreen support
   await windowManager.ensureInitialized();
 
-  runApp(const JustWriteApp());
+  runApp(const FloeApp());
 }
 
-class JustWriteApp extends StatelessWidget {
-  const JustWriteApp({Key? key}) : super(key: key);
+class FloeApp extends StatelessWidget {
+  const FloeApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {

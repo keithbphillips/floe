@@ -56,7 +56,7 @@ class DocumentProvider extends ChangeNotifier {
       _isSaving = true;
 
       final directory = await getApplicationDocumentsDirectory();
-      final docsDir = Directory('${directory.path}/JustWrite');
+      final docsDir = Directory('${directory.path}/Floe');
       if (!await docsDir.exists()) {
         await docsDir.create(recursive: true);
       }
