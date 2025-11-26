@@ -30,7 +30,7 @@ jobs:
           Compress-Archive -Path * -DestinationPath ../../../../../floe-windows.zip
 
       - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: floe-windows
           path: floe-windows.zip
@@ -58,7 +58,7 @@ jobs:
           hdiutil create -volname "Floe" -srcfolder floe.app -ov -format UDZO ../../../../../floe-macos.dmg
 
       - name: Upload macOS Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: floe-macos
           path: floe-macos.dmg
@@ -91,7 +91,7 @@ jobs:
           tar -czf ../../../../floe-linux.tar.gz bundle/
 
       - name: Upload Linux Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: floe-linux
           path: floe-linux.tar.gz
@@ -102,7 +102,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
