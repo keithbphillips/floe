@@ -35,61 +35,69 @@ jobs:
           name: floe-windows
           path: floe-windows.zip
 
-  # macOS and Linux builds temporarily disabled - platform support coming soon
-  # Uncomment these jobs once macOS/Linux desktop support is added to the Flutter project
-  #
-  # build-macos:
-  #   runs-on: macos-latest
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - name: Setup Flutter
-  #       uses: subosito/flutter-action@v2
-  #       with:
-  #         flutter-version: '3.24.0'
-  #         channel: 'stable'
-  #     - name: Install dependencies
-  #       run: flutter pub get
-  #     - name: Build macOS
-  #       run: flutter build macos --release
-  #     - name: Create macOS DMG
-  #       run: |
-  #         cd build/macos/Build/Products/Release
-  #         hdiutil create -volname "Floe" -srcfolder floe.app -ov -format UDZO ../../../../../floe-macos.dmg
-  #     - name: Upload macOS Artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: floe-macos
-  #         path: floe-macos.dmg
-  #
-  # build-linux:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - name: Setup Flutter
-  #       uses: subosito/flutter-action@v2
-  #       with:
-  #         flutter-version: '3.24.0'
-  #         channel: 'stable'
-  #     - name: Install Linux dependencies
-  #       run: |
-  #         sudo apt-get update
-  #         sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
-  #     - name: Install dependencies
-  #       run: flutter pub get
-  #     - name: Build Linux
-  #       run: flutter build linux --release
-  #     - name: Create Linux tarball
-  #       run: |
-  #         cd build/linux/x64/release
-  #         tar -czf ../../../../floe-linux.tar.gz bundle/
-  #     - name: Upload Linux Artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: floe-linux
-  #         path: floe-linux.tar.gz
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build macOS
+        run: flutter build macos --release
+
+      - name: Create macOS DMG
+        run: |
+          cd build/macos/Build/Products/Release
+          hdiutil create -volname "Floe" -srcfolder floe.app -ov -format UDZO ../../../../../floe-macos.dmg
+
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: floe-macos
+          path: floe-macos.dmg
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Linux
+        run: flutter build linux --release
+
+      - name: Create Linux tarball
+        run: |
+          cd build/linux/x64/release
+          tar -czf ../../../../floe-linux.tar.gz bundle/
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: floe-linux
+          path: floe-linux.tar.gz
 
   create-release:
-    needs: [build-windows]
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -101,6 +109,8 @@ jobs:
         with:
           files: |
             floe-windows/floe-windows.zip
+            floe-macos/floe-macos.dmg
+            floe-linux/floe-linux.tar.gz
           draft: false
           prerelease: false
           body: |
@@ -108,16 +118,27 @@ jobs:
 
             ### Platform Support
             - ✅ **Windows** - Download `floe-windows.zip` below
-            - ⏳ **macOS** - Coming soon
-            - ⏳ **Linux** - Coming soon
+            - ✅ **macOS** - Download `floe-macos.dmg` below
+            - ✅ **Linux** - Download `floe-linux.tar.gz` below
 
             ### Installation
+
+            **Windows:**
             1. Download `floe-windows.zip`
             2. Extract the ZIP file
             3. Run `floe.exe`
 
+            **macOS:**
+            1. Download `floe-macos.dmg`
+            2. Open the DMG file
+            3. Drag Floe.app to Applications
+
+            **Linux:**
+            1. Download `floe-linux.tar.gz`
+            2. Extract: `tar -xzf floe-linux.tar.gz`
+            3. Run: `./bundle/floe`
+
             ### Requirements
-            - Windows 10 or later
             - [Ollama](https://ollama.ai) with `llama3.2:3b` model (for AI features)
 
             See the [README](https://github.com/keithbphillips/floe#readme) for full documentation.
