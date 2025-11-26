@@ -75,7 +75,7 @@ Extract and return JSON with these fields:
   "tone": "brief emotional tone (1-2 words)",
   "dialogue_percentage": estimated percentage (0-100),
   "word_count": ${ sceneText.split(RegExp(r'\\s+')).length},
-  "echo_words": ["words repeated 3+ times"],
+  "echo_words": ["words repeated in close proximity - only flag noticeable repetitions within nearby sentences"],
   "senses": ["which senses engaged: sight/sound/touch/taste/smell"],
   "stakes": "brief description of what's at risk",
   "hunches": ["2-3 brief suggestions or observations about the scene - things like pacing, clarity, emotional resonance, missing elements, or opportunities"]
@@ -118,22 +118,40 @@ Respond with ONLY the JSON object, nothing else.''';
     return names.toList()..sort();
   }
 
-  /// Count echo words (words repeated 3+ times)
+  /// Find echo words (words repeated within close proximity)
+  /// Only flags words that appear 2+ times within a 50-word window
   Map<String, int> findEchoWords(String text) {
     final words = text.toLowerCase()
         .replaceAll(RegExp(r'[^\w\s]'), '')
-        .split(RegExp(r'\s+'));
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length > 3 && !_stopWords.contains(w))
+        .toList();
 
-    final wordCounts = <String, int>{};
-    for (final word in words) {
-      if (word.length > 3 && !_stopWords.contains(word)) {
-        wordCounts[word] = (wordCounts[word] ?? 0) + 1;
+    final echoWords = <String, int>{};
+    const windowSize = 50; // Check within 50-word windows
+
+    // Scan through the text with a sliding window
+    for (int i = 0; i < words.length; i++) {
+      final word = words[i];
+      final windowEnd = (i + windowSize < words.length) ? i + windowSize : words.length;
+
+      // Count occurrences of this word within the window
+      int countInWindow = 0;
+      for (int j = i; j < windowEnd; j++) {
+        if (words[j] == word) {
+          countInWindow++;
+        }
+      }
+
+      // If word appears 2+ times in this window, flag it as an echo
+      if (countInWindow >= 2) {
+        echoWords[word] = (echoWords[word] ?? 0) + 1;
       }
     }
 
-    // Return only words used 3+ times
+    // Return words sorted by frequency
     return Map.fromEntries(
-      wordCounts.entries.where((e) => e.value >= 3),
+      echoWords.entries.toList()..sort((a, b) => b.value.compareTo(a.value)),
     );
   }
 
