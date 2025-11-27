@@ -10,6 +10,7 @@ import '../widgets/settings_dialog.dart';
 import '../widgets/word_count_overlay.dart';
 import '../widgets/file_menu.dart';
 import '../widgets/scene_info_panel.dart';
+import '../widgets/find_dialog.dart';
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({Key? key}) : super(key: key);
@@ -21,9 +22,12 @@ class EditorScreen extends StatefulWidget {
 class _EditorScreenState extends State<EditorScreen> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
   bool _showWordCount = false;
   bool _showFileMenu = false;
+  bool _showFindDialog = false;
   bool _isFullscreen = false;
+  String _searchText = '';
 
   int _lastAnalyzedWordCount = 0;
   DateTime? _lastEditTime;
@@ -41,9 +45,18 @@ class _EditorScreenState extends State<EditorScreen> {
 
     docProvider.startAutoSave(settingsProvider.autoSaveInterval);
 
-    // Request focus on startup
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Load last file and request focus on startup
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Try to load the last opened file
+      await docProvider.loadLastFile();
+
+      // Update controller if content was loaded
+      if (docProvider.content.isNotEmpty && _controller.text != docProvider.content) {
+        _controller.text = docProvider.content;
+      }
+
       _focusNode.requestFocus();
+
       // Initial analysis if there's content
       if (_controller.text.trim().isNotEmpty) {
         _checkAndAnalyze();
@@ -87,6 +100,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _focusNode.dispose();
+    _scrollController.dispose();
     context.read<DocumentProvider>().stopAutoSave();
     super.dispose();
   }
@@ -112,8 +126,17 @@ class _EditorScreenState extends State<EditorScreen> {
     else if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyD) {
       context.read<AppSettingsProvider>().toggleDarkMode();
     }
-    // Cmd/Ctrl + F : Toggle focus mode
-    else if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyF) {
+    // Cmd/Ctrl + F : Toggle find dialog
+    else if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyF && !event.isShiftPressed) {
+      setState(() {
+        _showFindDialog = !_showFindDialog;
+        if (!_showFindDialog) {
+          _searchText = '';
+        }
+      });
+    }
+    // Cmd/Ctrl + Shift + F : Toggle focus mode
+    else if (isCtrlOrCmd && event.isShiftPressed && event.logicalKey == LogicalKeyboardKey.keyF) {
       context.read<AppSettingsProvider>().toggleFocusMode();
     }
     // Cmd/Ctrl + Shift + W : Toggle word count
@@ -122,17 +145,22 @@ class _EditorScreenState extends State<EditorScreen> {
         _showWordCount = !_showWordCount;
       });
     }
-    // Cmd/Ctrl + A : Analyze scene
-    else if (isCtrlOrCmd && event.logicalKey == LogicalKeyboardKey.keyA) {
+    // Cmd/Ctrl + Shift + A : Analyze scene
+    else if (isCtrlOrCmd && event.isShiftPressed && event.logicalKey == LogicalKeyboardKey.keyA) {
       _analyzeCurrentScene();
     }
     // F11 : Toggle fullscreen
     else if (event.logicalKey == LogicalKeyboardKey.f11) {
       _toggleFullscreen();
     }
-    // Escape : Toggle file menu (or exit fullscreen)
+    // Escape : Close find dialog, toggle file menu (or exit fullscreen)
     else if (event.logicalKey == LogicalKeyboardKey.escape) {
-      if (_isFullscreen) {
+      if (_showFindDialog) {
+        setState(() {
+          _showFindDialog = false;
+          _searchText = '';
+        });
+      } else if (_isFullscreen) {
         _toggleFullscreen();
       } else {
         setState(() {
@@ -411,7 +439,16 @@ class _EditorScreenState extends State<EditorScreen> {
 
     // Extract current scene based on cursor position
     final cursorPosition = _controller.selection.baseOffset;
+    debugPrint('=== _performAnalysis called ===');
+    debugPrint('Cursor position: $cursorPosition');
+    debugPrint('Full document length: ${document.content.length}');
+    debugPrint('Document word count: ${document.wordCount}');
+
     final sceneText = analyzer.extractCurrentScene(document.content, cursorPosition);
+
+    debugPrint('Extracted scene length: ${sceneText.length}');
+    debugPrint('Scene word count: ${sceneText.trim().isEmpty ? 0 : sceneText.trim().split(RegExp(r'\s+')).length}');
+    debugPrint('Scene preview (first 200 chars): ${sceneText.substring(0, sceneText.length > 200 ? 200 : sceneText.length)}');
 
     if (sceneText.isNotEmpty) {
       // Start analysis
@@ -420,6 +457,8 @@ class _EditorScreenState extends State<EditorScreen> {
       // Update tracking variables
       _lastAnalyzedWordCount = document.wordCount;
       _lastAnalysisTime = DateTime.now();
+    } else {
+      debugPrint('ERROR: sceneText is empty, analysis skipped');
     }
   }
 
@@ -446,6 +485,7 @@ class _EditorScreenState extends State<EditorScreen> {
                       child: TextField(
                         controller: _controller,
                         focusNode: _focusNode,
+                        scrollController: _scrollController,
                         maxLines: null,
                         expands: true,
                         textAlign: TextAlign.left,
@@ -480,6 +520,82 @@ class _EditorScreenState extends State<EditorScreen> {
                       ),
                     ),
 
+                  // Find dialog
+                  if (_showFindDialog)
+                    Positioned(
+                      top: 20,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: FindDialog(
+                          key: const ValueKey('find_dialog'),
+                          initialSearchText: '',
+                          documentContent: document.content,
+                          onSearch: (searchText) {
+                            setState(() {
+                              _searchText = searchText;
+                            });
+                          },
+                          onNavigateToMatch: (start, end, searchFocusNode) {
+                            // Update text selection to highlight the found text
+                            _controller.selection = TextSelection(
+                              baseOffset: start,
+                              extentOffset: end,
+                            );
+
+                            // Give focus to TextField to show selection and trigger scroll
+                            _focusNode.requestFocus();
+
+                            // Calculate scroll position to center the match vertically
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (_scrollController.hasClients) {
+                                final text = document.content.substring(0, start);
+                                final lineCount = '\n'.allMatches(text).length;
+
+                                // Get viewport height
+                                final viewportHeight = _scrollController.position.viewportDimension;
+
+                                // Estimate line height (using theme settings)
+                                final theme = Theme.of(context);
+                                final fontSize = theme.textTheme.bodyLarge?.fontSize ?? 18.0;
+                                final lineHeight = fontSize * 1.5; // Approximate line height
+
+                                // Calculate position of the matched text
+                                final matchPosition = lineCount * lineHeight;
+
+                                // Center it vertically in viewport
+                                final scrollTo = (matchPosition - (viewportHeight / 2)).clamp(
+                                  0.0,
+                                  _scrollController.position.maxScrollExtent
+                                );
+
+                                _scrollController.animateTo(
+                                  scrollTo,
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeInOut,
+                                );
+
+                                // Return focus to search field after a brief delay
+                                Future.delayed(const Duration(milliseconds: 100), () {
+                                  if (_showFindDialog && mounted) {
+                                    // Explicitly request focus back to the search field
+                                    searchFocusNode.requestFocus();
+                                  }
+                                });
+                              }
+                            });
+                          },
+                          onClose: () {
+                            setState(() {
+                              _showFindDialog = false;
+                              _searchText = '';
+                            });
+                            _focusNode.requestFocus();
+                          },
+                        ),
+                      ),
+                    ),
+
                   // Word count overlay
                   if (_showWordCount)
                     Positioned(
@@ -496,7 +612,13 @@ class _EditorScreenState extends State<EditorScreen> {
                     Positioned(
                       top: 20,
                       left: 20,
-                      child: FileMenu(),
+                      child: FileMenu(
+                        onClose: () {
+                          setState(() {
+                            _showFileMenu = false;
+                          });
+                        },
+                      ),
                     ),
                 ],
               ),
@@ -541,6 +663,7 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
     );
   }
+
 }
 
 class FocusModePainter extends CustomPainter {
