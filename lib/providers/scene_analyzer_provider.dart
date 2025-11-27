@@ -35,21 +35,29 @@ class SceneAnalyzerProvider extends ChangeNotifier {
     try {
       if (_ollamaAvailable) {
         // Use LLM for full analysis
+        debugPrint('=== Analyzing scene (${sceneText.length} chars) ===');
         final analysisData = await _ollamaService.analyzeScene(sceneText);
 
         if (analysisData != null && !analysisData.containsKey('error')) {
+          debugPrint('LLM analysis data: $analysisData');
+          debugPrint('Echo words from LLM: ${analysisData['echo_words']}');
           _currentAnalysis = SceneAnalysis.fromJson(analysisData);
+          debugPrint('After parsing, echo words: ${_currentAnalysis?.echoWords}');
+          debugPrint('Word count: ${_currentAnalysis?.wordCount}');
         } else {
           // Fallback to simple analysis
+          debugPrint('LLM analysis failed, using simple analysis');
           _currentAnalysis = _createSimpleAnalysis(sceneText);
           _error = 'LLM analysis failed, using simple analysis';
         }
       } else {
         // Ollama not available, use simple analysis
+        debugPrint('Ollama not available, using simple analysis');
         _currentAnalysis = _createSimpleAnalysis(sceneText);
         _error = 'Ollama not available - using basic analysis';
       }
     } catch (e) {
+      debugPrint('Analysis error: $e');
       _error = 'Analysis error: $e';
       _currentAnalysis = _createSimpleAnalysis(sceneText);
     } finally {
@@ -67,6 +75,8 @@ class SceneAnalyzerProvider extends ChangeNotifier {
     final characters = _ollamaService.extractCharactersSimple(text);
     final echoWords = _ollamaService.findEchoWords(text);
     final dialoguePercentage = _ollamaService.calculateDialoguePercentage(text);
+
+    debugPrint('Simple analysis created - word count: $wordCount, echo words: ${echoWords.keys.toList()}');
 
     return SceneAnalysis(
       characters: characters,

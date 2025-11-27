@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../providers/document_provider.dart';
 
 class FileMenu extends StatelessWidget {
-  const FileMenu({Key? key}) : super(key: key);
+  final VoidCallback? onClose;
+
+  const FileMenu({Key? key, this.onClose}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -164,6 +166,9 @@ class FileMenu extends StatelessWidget {
         ),
       );
     }
+
+    // Hide the file menu
+    onClose?.call();
   }
 
   Future<void> _openDocument(BuildContext context) async {
@@ -190,6 +195,9 @@ class FileMenu extends StatelessWidget {
           ),
         );
       }
+
+      // Hide the file menu on success
+      onClose?.call();
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -225,6 +233,9 @@ class FileMenu extends StatelessWidget {
           ),
         );
       }
+
+      // Hide the file menu on success
+      onClose?.call();
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

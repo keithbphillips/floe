@@ -122,7 +122,7 @@ class SceneInfoPanel extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
-            'Ctrl+A to force analysis',
+            'Ctrl+Shift+A to force analysis',
             style: theme.textTheme.bodySmall?.copyWith(
               color: Colors.grey[500],
               fontSize: 11,

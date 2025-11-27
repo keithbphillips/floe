@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/focus_helper.dart';
 
 class DocumentProvider extends ChangeNotifier {
+  static const String _lastFilePathKey = 'last_file_path';
   String _content = '';
   String? _filePath;
   bool _hasUnsavedChanges = false;
@@ -93,6 +95,10 @@ class DocumentProvider extends ChangeNotifier {
 
       _filePath = finalPath;
       _hasUnsavedChanges = false;
+
+      // Save this as the last opened file
+      await _saveLastFilePath(finalPath);
+
       notifyListeners();
     } catch (e) {
       debugPrint('Save failed: $e');
@@ -109,10 +115,56 @@ class DocumentProvider extends ChangeNotifier {
       _filePath = path;
       _hasUnsavedChanges = false;
       _cursorPosition = 0;
+
+      // Save this as the last opened file
+      await _saveLastFilePath(path);
+
       notifyListeners();
     } catch (e) {
       debugPrint('Load failed: $e');
       rethrow;
+    }
+  }
+
+  /// Load the last opened file on startup
+  Future<void> loadLastFile() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastPath = prefs.getString(_lastFilePathKey);
+
+      if (lastPath != null && lastPath.isNotEmpty) {
+        final file = File(lastPath);
+        if (await file.exists()) {
+          debugPrint('Loading last file: $lastPath');
+          await loadFile(lastPath);
+        } else {
+          debugPrint('Last file no longer exists: $lastPath');
+          await _clearLastFilePath();
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load last file: $e');
+    }
+  }
+
+  /// Save the last file path to preferences
+  Future<void> _saveLastFilePath(String path) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastFilePathKey, path);
+      debugPrint('Saved last file path: $path');
+    } catch (e) {
+      debugPrint('Failed to save last file path: $e');
+    }
+  }
+
+  /// Clear the last file path from preferences
+  Future<void> _clearLastFilePath() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_lastFilePathKey);
+    } catch (e) {
+      debugPrint('Failed to clear last file path: $e');
     }
   }
 

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class SceneAnalysis {
   final List<String> characters;
   final String? setting;
@@ -28,6 +30,20 @@ class SceneAnalysis {
   });
 
   factory SceneAnalysis.fromJson(Map<String, dynamic> json) {
+    // Process echo words - if LLM returns phrases, split them into individual words
+    List<String> processEchoWords(List<dynamic>? rawEchoWords) {
+      if (rawEchoWords == null) {
+        debugPrint('processEchoWords: rawEchoWords is null');
+        return [];
+      }
+
+      debugPrint('processEchoWords: processing $rawEchoWords');
+      // Simply return the words as-is from the LLM, trust it to return individual words
+      final result = rawEchoWords.map((e) => e.toString().toLowerCase().trim()).where((w) => w.isNotEmpty).toList();
+      debugPrint('processEchoWords: result = $result');
+      return result;
+    }
+
     return SceneAnalysis(
       characters: (json['characters'] as List?)?.cast<String>() ?? [],
       setting: json['setting'] as String?,
@@ -36,7 +52,7 @@ class SceneAnalysis {
       tone: json['tone'] as String?,
       dialoguePercentage: json['dialogue_percentage'] as int?,
       wordCount: json['word_count'] as int? ?? 0,
-      echoWords: (json['echo_words'] as List?)?.cast<String>() ?? [],
+      echoWords: processEchoWords(json['echo_words'] as List?),
       senses: (json['senses'] as List?)?.cast<String>() ?? [],
       stakes: json['stakes'] as String?,
       hunches: (json['hunches'] as List?)?.cast<String>() ?? [],

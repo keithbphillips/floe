@@ -28,6 +28,9 @@ class OllamaService {
   Future<Map<String, dynamic>?> analyzeScene(String sceneText) async {
     if (sceneText.trim().isEmpty) return null;
 
+    // Calculate word count upfront so we can use it as fallback
+    final actualWordCount = sceneText.trim().split(RegExp(r'\s+')).length;
+
     try {
       final prompt = _buildAnalysisPrompt(sceneText);
 
@@ -48,7 +51,14 @@ class OllamaService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final analysisText = data['response'] as String;
-        return _parseAnalysis(analysisText);
+        final parsedResult = _parseAnalysis(analysisText);
+
+        // Ensure word_count is always present
+        if (parsedResult != null && !parsedResult.containsKey('word_count')) {
+          parsedResult['word_count'] = actualWordCount;
+        }
+
+        return parsedResult;
       }
     } catch (e) {
       debugPrint('Scene analysis error: $e');
@@ -59,6 +69,11 @@ class OllamaService {
 
   /// Build the analysis prompt for the LLM
   String _buildAnalysisPrompt(String sceneText) {
+    // Pre-calculate word count to ensure accuracy
+    final actualWordCount = sceneText.trim().isEmpty
+        ? 0
+        : sceneText.trim().split(RegExp(r'\s+')).length;
+
     return '''Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.
 
 Scene text:
@@ -74,12 +89,14 @@ Extract and return JSON with these fields:
   "pov": "whose perspective (character name or unknown)",
   "tone": "brief emotional tone (1-2 words)",
   "dialogue_percentage": estimated percentage (0-100),
-  "word_count": ${ sceneText.split(RegExp(r'\\s+')).length},
-  "echo_words": ["words repeated in close proximity - only flag noticeable repetitions within nearby sentences"],
+  "word_count": $actualWordCount,
+  "echo_words": ["Look for words that appear CLOSE TOGETHER in the text - within a few sentences of each other, or within the same sentence. Echo words are repetitions that feel noticeable because they're in close proximity, not just words that appear multiple times throughout the entire scene. For example, if 'like' appears 5 times within one paragraph, that's an echo. If 'walked' appears in paragraph 1 and again in paragraph 5, that's NOT an echo. Focus on PROXIMITY and noticeable repetition within short passages. Include meaningful content words (nouns, verbs, adjectives, adverbs) but DO NOT include common function words like: I, you, he, she, it, they, the, a, an, and, but, or, of, in, on, at, to, from, that, this, was, is, had, has, been, said. Return empty array if no echo words found."],
   "senses": ["which senses engaged: sight/sound/touch/taste/smell"],
   "stakes": "brief description of what's at risk",
   "hunches": ["2-3 brief suggestions or observations about the scene - things like pacing, clarity, emotional resonance, missing elements, or opportunities"]
 }
+
+CRITICAL: Use exactly $actualWordCount for word_count. For echo_words, focus on PROXIMITY - words that repeat within close range (same paragraph or nearby sentences), NOT just words that appear multiple times across the whole scene.
 
 Respond with ONLY the JSON object, nothing else.''';
   }
@@ -90,13 +107,15 @@ Respond with ONLY the JSON object, nothing else.''';
       // Try to extract JSON from the response
       final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(analysisText);
       if (jsonMatch != null) {
-        return json.decode(jsonMatch.group(0)!);
+        final parsed = json.decode(jsonMatch.group(0)!);
+        return parsed;
       }
 
       // If no JSON found, return the raw text
       return {'raw_response': analysisText};
     } catch (e) {
       debugPrint('Failed to parse analysis: $e');
+      debugPrint('Analysis text was: $analysisText');
       return {'error': 'Failed to parse analysis', 'raw_response': analysisText};
     }
   }
@@ -178,11 +197,15 @@ Respond with ONLY the JSON object, nothing else.''';
     'over', 'think', 'also', 'back', 'after', 'use', 'two', 'how',
     'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want',
     'because', 'any', 'these', 'give', 'day', 'most', 'us', 'chapter',
+    'myself', 'himself', 'herself', 'themselves', 'something', 'nothing',
+    'everything', 'anything', 'someone', 'anyone', 'everyone', 'before',
   };
 
   static final Set<String> _stopWords = {
     'the', 'and', 'that', 'this', 'with', 'from', 'have', 'they',
     'was', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her',
     'his', 'she', 'had', 'has', 'said', 'been', 'will', 'more',
+    'were', 'their', 'would', 'there', 'could', 'should', 'about',
+    'which', 'these', 'those', 'them', 'some', 'into', 'like',
   };
 }
