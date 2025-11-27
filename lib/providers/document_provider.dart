@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -111,7 +112,13 @@ class DocumentProvider extends ChangeNotifier {
   Future<void> loadFile(String path) async {
     try {
       final file = File(path);
-      _content = await file.readAsString();
+      final bytes = await file.readAsBytes();
+
+      // Decode as UTF-8 with lenient mode to handle any encoding quirks
+      final content = utf8.decode(bytes, allowMalformed: true);
+      debugPrint('Successfully decoded file using UTF-8');
+
+      _content = content;
       _filePath = path;
       _hasUnsavedChanges = false;
       _cursorPosition = 0;

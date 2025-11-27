@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,7 @@ import '../widgets/word_count_overlay.dart';
 import '../widgets/file_menu.dart';
 import '../widgets/scene_info_panel.dart';
 import '../widgets/find_dialog.dart';
+import '../widgets/structure_bubble_chart.dart';
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({Key? key}) : super(key: key);
@@ -32,6 +34,7 @@ class _EditorScreenState extends State<EditorScreen> {
   int _lastAnalyzedWordCount = 0;
   DateTime? _lastEditTime;
   DateTime? _lastAnalysisTime;
+  Timer? _updateDebounceTimer;
 
   @override
   void initState() {
@@ -97,6 +100,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    _updateDebounceTimer?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _focusNode.dispose();
@@ -559,9 +563,55 @@ class _EditorScreenState extends State<EditorScreen> {
           children: [
             // Main editor area
             Expanded(
-              child: Stack(
+              child: Column(
                 children: [
-                  Center(
+                  // Bubble chart at the top
+                  if (!_isFullscreen)
+                    StructureBubbleChart(
+                      documentContent: document.content,
+                      onNavigate: (position) {
+                        // Navigate to the position
+                        _controller.selection = TextSelection.collapsed(offset: position);
+                        _focusNode.requestFocus();
+
+                        // Scroll to the position
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (_scrollController.hasClients) {
+                            final text = document.content.substring(0, position);
+                            final lineCount = '\n'.allMatches(text).length;
+
+                            // Get viewport height
+                            final viewportHeight = _scrollController.position.viewportDimension;
+
+                            // Estimate line height
+                            final theme = Theme.of(context);
+                            final fontSize = theme.textTheme.bodyLarge?.fontSize ?? 18.0;
+                            final lineHeight = fontSize * 1.5;
+
+                            // Calculate position
+                            final targetPosition = lineCount * lineHeight;
+
+                            // Center it vertically in viewport
+                            final scrollTo = (targetPosition - (viewportHeight / 2)).clamp(
+                              0.0,
+                              _scrollController.position.maxScrollExtent
+                            );
+
+                            _scrollController.animateTo(
+                              scrollTo,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                            );
+                          }
+                        });
+                      },
+                    ),
+
+                  // Editor area
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Center(
                     child: Container(
                       constraints: const BoxConstraints(maxWidth: 800),
                       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 60),
@@ -584,10 +634,16 @@ class _EditorScreenState extends State<EditorScreen> {
                         ),
                         onChanged: (text) {
                           final cursorPos = _controller.selection.baseOffset;
-                          document.updateContent(text, cursorPos);
-                          // Track edit time for automatic analysis
-                          setState(() {
-                            _lastEditTime = DateTime.now();
+
+                          // Track edit time (lightweight, no rebuild)
+                          _lastEditTime = DateTime.now();
+
+                          // Debounce expensive updates (focus mode, bubble chart, etc.)
+                          _updateDebounceTimer?.cancel();
+                          _updateDebounceTimer = Timer(const Duration(milliseconds: 150), () {
+                            if (mounted) {
+                              document.updateContent(text, cursorPos);
+                            }
                           });
                         },
                         buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
@@ -711,6 +767,9 @@ class _EditorScreenState extends State<EditorScreen> {
                         },
                       ),
                     ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -804,7 +863,10 @@ class _SearchableTextEditingController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
-    if (_searchText.isEmpty) {
+    // PERFORMANCE: Don't highlight search terms in large documents (>20k chars)
+    // The search highlighting causes massive lag on every keystroke
+    // Users can still navigate search results via the Find dialog
+    if (_searchText.isEmpty || text.length > 20000) {
       return TextSpan(text: text, style: style);
     }
 
@@ -813,8 +875,12 @@ class _SearchableTextEditingController extends TextEditingController {
     final String textLower = text.toLowerCase();
 
     int lastMatchEnd = 0;
+    int matchCount = 0;
+    const maxMatches = 50; // Limit matches to prevent performance issues
 
     for (final match in searchLower.allMatches(textLower)) {
+      if (matchCount >= maxMatches) break; // Stop after 50 matches
+
       // Add text before the match
       if (match.start > lastMatchEnd) {
         spans.add(TextSpan(
@@ -833,6 +899,7 @@ class _SearchableTextEditingController extends TextEditingController {
       ));
 
       lastMatchEnd = match.end;
+      matchCount++;
     }
 
     // Add remaining text after the last match
