@@ -19,6 +19,10 @@ class DocumentProvider extends ChangeNotifier {
   int _focusStart = 0;
   int _focusEnd = 0;
 
+  // Throttle focus updates
+  Timer? _focusUpdateTimer;
+  int _pendingCursorPos = 0;
+
   String get content => _content;
   String? get filePath => _filePath;
   bool get hasUnsavedChanges => _hasUnsavedChanges;
@@ -32,11 +36,22 @@ class DocumentProvider extends ChangeNotifier {
     _cursorPosition = cursorPos;
     _hasUnsavedChanges = true;
 
-    // Update focus region based on cursor position
-    final focusRange = FocusHelper.getCurrentSentenceRange(_content, cursorPos);
-    _focusStart = focusRange.$1;
-    _focusEnd = focusRange.$2;
+    // Throttle focus updates to improve performance in large documents
+    // Cancel any pending focus update
+    _focusUpdateTimer?.cancel();
+    _pendingCursorPos = cursorPos;
 
+    // Schedule a throttled focus update (200ms delay)
+    _focusUpdateTimer = Timer(const Duration(milliseconds: 200), () {
+      // Update focus region based on cursor position
+      final focusRange = FocusHelper.getCurrentSentenceRange(_content, _pendingCursorPos);
+      _focusStart = focusRange.$1;
+      _focusEnd = focusRange.$2;
+      notifyListeners();
+    });
+
+    // Notify immediately for content changes (typing responsiveness)
+    // but skip focus calculation
     notifyListeners();
   }
 
@@ -188,6 +203,7 @@ class DocumentProvider extends ChangeNotifier {
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
+    _focusUpdateTimer?.cancel();
     super.dispose();
   }
 }

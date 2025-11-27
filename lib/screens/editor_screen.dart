@@ -34,7 +34,6 @@ class _EditorScreenState extends State<EditorScreen> {
   int _lastAnalyzedWordCount = 0;
   DateTime? _lastEditTime;
   DateTime? _lastAnalysisTime;
-  Timer? _updateDebounceTimer;
 
   @override
   void initState() {
@@ -100,7 +99,6 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
-    _updateDebounceTimer?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _focusNode.dispose();
@@ -635,16 +633,11 @@ class _EditorScreenState extends State<EditorScreen> {
                         onChanged: (text) {
                           final cursorPos = _controller.selection.baseOffset;
 
-                          // Track edit time (lightweight, no rebuild)
-                          _lastEditTime = DateTime.now();
+                          // Update document content immediately to preserve cursor position
+                          document.updateContent(text, cursorPos);
 
-                          // Debounce expensive updates (focus mode, bubble chart, etc.)
-                          _updateDebounceTimer?.cancel();
-                          _updateDebounceTimer = Timer(const Duration(milliseconds: 150), () {
-                            if (mounted) {
-                              document.updateContent(text, cursorPos);
-                            }
-                          });
+                          // Track edit time for automatic analysis
+                          _lastEditTime = DateTime.now();
                         },
                         buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
                       ),
@@ -863,10 +856,7 @@ class _SearchableTextEditingController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
-    // PERFORMANCE: Don't highlight search terms in large documents (>20k chars)
-    // The search highlighting causes massive lag on every keystroke
-    // Users can still navigate search results via the Find dialog
-    if (_searchText.isEmpty || text.length > 20000) {
+    if (_searchText.isEmpty) {
       return TextSpan(text: text, style: style);
     }
 
