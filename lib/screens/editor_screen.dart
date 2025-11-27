@@ -20,7 +20,7 @@ class EditorScreen extends StatefulWidget {
 }
 
 class _EditorScreenState extends State<EditorScreen> {
-  final TextEditingController _controller = TextEditingController();
+  late _SearchableTextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   bool _showWordCount = false;
@@ -40,7 +40,7 @@ class _EditorScreenState extends State<EditorScreen> {
     final settingsProvider = context.read<AppSettingsProvider>();
 
     // Initialize controller with current content
-    _controller.text = docProvider.content;
+    _controller = _SearchableTextEditingController(text: docProvider.content);
     _controller.addListener(_onControllerChanged);
 
     docProvider.startAutoSave(settingsProvider.autoSaveInterval);
@@ -132,6 +132,7 @@ class _EditorScreenState extends State<EditorScreen> {
         _showFindDialog = !_showFindDialog;
         if (!_showFindDialog) {
           _searchText = '';
+          _controller.updateSearchText('');
         }
       });
     }
@@ -159,6 +160,7 @@ class _EditorScreenState extends State<EditorScreen> {
         setState(() {
           _showFindDialog = false;
           _searchText = '';
+          _controller.updateSearchText('');
         });
       } else if (_isFullscreen) {
         _toggleFullscreen();
@@ -534,6 +536,7 @@ class _EditorScreenState extends State<EditorScreen> {
                           onSearch: (searchText) {
                             setState(() {
                               _searchText = searchText;
+                              _controller.updateSearchText(searchText);
                             });
                           },
                           onNavigateToMatch: (start, end, searchFocusNode) {
@@ -589,6 +592,7 @@ class _EditorScreenState extends State<EditorScreen> {
                             setState(() {
                               _showFindDialog = false;
                               _searchText = '';
+                              _controller.updateSearchText('');
                             });
                             _focusNode.requestFocus();
                           },
@@ -694,5 +698,64 @@ class FocusModePainter extends CustomPainter {
     return focusStart != oldDelegate.focusStart ||
            focusEnd != oldDelegate.focusEnd ||
            normalOpacity != oldDelegate.normalOpacity;
+  }
+}
+
+class _SearchableTextEditingController extends TextEditingController {
+  String _searchText = '';
+
+  _SearchableTextEditingController({String? text}) : super(text: text);
+
+  void updateSearchText(String searchText) {
+    _searchText = searchText;
+    notifyListeners();
+  }
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    if (_searchText.isEmpty) {
+      return TextSpan(text: text, style: style);
+    }
+
+    final List<TextSpan> spans = [];
+    final String searchLower = _searchText.toLowerCase();
+    final String textLower = text.toLowerCase();
+
+    int lastMatchEnd = 0;
+
+    for (final match in searchLower.allMatches(textLower)) {
+      // Add text before the match
+      if (match.start > lastMatchEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastMatchEnd, match.start),
+          style: style,
+        ));
+      }
+
+      // Add the matched text with yellow color
+      spans.add(TextSpan(
+        text: text.substring(match.start, match.end),
+        style: style?.copyWith(
+          color: Colors.amber.shade700,
+          fontWeight: FontWeight.bold,
+        ),
+      ));
+
+      lastMatchEnd = match.end;
+    }
+
+    // Add remaining text after the last match
+    if (lastMatchEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastMatchEnd),
+        style: style,
+      ));
+    }
+
+    return TextSpan(children: spans, style: style);
   }
 }
