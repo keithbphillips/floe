@@ -464,6 +464,87 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
+  void _replaceCurrentMatch(String searchText, String replaceText) {
+    if (searchText.isEmpty) return;
+
+    final document = context.read<DocumentProvider>();
+    final selection = _controller.selection;
+
+    // Check if current selection matches the search text
+    if (selection.isValid && selection.start != selection.end) {
+      final selectedText = document.content.substring(selection.start, selection.end);
+
+      if (selectedText.toLowerCase() == searchText.toLowerCase()) {
+        // Replace the selected text
+        final newText = document.content.replaceRange(
+          selection.start,
+          selection.end,
+          replaceText,
+        );
+
+        // Update controller and document
+        final newCursorPos = selection.start + replaceText.length;
+        _controller.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newCursorPos),
+        );
+
+        document.updateContent(newText, newCursorPos);
+
+        // Update search highlighting
+        _controller.updateSearchText(searchText);
+
+        setState(() {});
+      }
+    }
+  }
+
+  void _replaceAllMatches(String searchText, String replaceText) {
+    if (searchText.isEmpty) return;
+
+    final document = context.read<DocumentProvider>();
+    final searchLower = searchText.toLowerCase();
+    final contentLower = document.content.toLowerCase();
+
+    // Find all matches
+    final matches = searchLower.allMatches(contentLower).toList();
+
+    if (matches.isEmpty) return;
+
+    // Replace all matches (work backwards to maintain correct indices)
+    String newText = document.content;
+    for (int i = matches.length - 1; i >= 0; i--) {
+      final match = matches[i];
+      newText = newText.replaceRange(match.start, match.end, replaceText);
+    }
+
+    // Update controller and document
+    final newCursorPos = _controller.selection.baseOffset;
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCursorPos),
+    );
+
+    document.updateContent(newText, newCursorPos);
+
+    // Clear search highlighting since there are no more matches
+    _controller.updateSearchText('');
+
+    setState(() {
+      _searchText = '';
+    });
+
+    // Show feedback to user
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Replaced ${matches.length} occurrence${matches.length == 1 ? '' : 's'}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<AppSettingsProvider>();
@@ -538,6 +619,12 @@ class _EditorScreenState extends State<EditorScreen> {
                               _searchText = searchText;
                               _controller.updateSearchText(searchText);
                             });
+                          },
+                          onReplace: (searchText, replaceText) {
+                            _replaceCurrentMatch(searchText, replaceText);
+                          },
+                          onReplaceAll: (searchText, replaceText) {
+                            _replaceAllMatches(searchText, replaceText);
                           },
                           onNavigateToMatch: (start, end, searchFocusNode) {
                             // Update text selection to highlight the found text

@@ -6,6 +6,8 @@ class FindDialog extends StatefulWidget {
   final VoidCallback onClose;
   final String documentContent;
   final Function(int, int, FocusNode)? onNavigateToMatch;
+  final Function(String, String)? onReplace;
+  final Function(String, String)? onReplaceAll;
 
   const FindDialog({
     Key? key,
@@ -14,6 +16,8 @@ class FindDialog extends StatefulWidget {
     required this.onClose,
     required this.documentContent,
     this.onNavigateToMatch,
+    this.onReplace,
+    this.onReplaceAll,
   }) : super(key: key);
 
   @override
@@ -22,15 +26,20 @@ class FindDialog extends StatefulWidget {
 
 class _FindDialogState extends State<FindDialog> {
   late TextEditingController _searchController;
+  late TextEditingController _replaceController;
   late FocusNode _searchFocusNode;
+  late FocusNode _replaceFocusNode;
   int _currentMatchIndex = 0;
   List<Match> _matches = [];
+  bool _showReplace = false;
 
   @override
   void initState() {
     super.initState();
     _searchController = TextEditingController(text: widget.initialSearchText);
+    _replaceController = TextEditingController();
     _searchFocusNode = FocusNode();
+    _replaceFocusNode = FocusNode();
 
     // Auto-focus the search field
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -47,7 +56,9 @@ class _FindDialogState extends State<FindDialog> {
   @override
   void dispose() {
     _searchController.dispose();
+    _replaceController.dispose();
     _searchFocusNode.dispose();
+    _replaceFocusNode.dispose();
     super.dispose();
   }
 
@@ -92,6 +103,16 @@ class _FindDialogState extends State<FindDialog> {
     });
   }
 
+  void _replace() {
+    if (_searchController.text.isEmpty || widget.onReplace == null) return;
+    widget.onReplace!(_searchController.text, _replaceController.text);
+  }
+
+  void _replaceAll() {
+    if (_searchController.text.isEmpty || widget.onReplaceAll == null) return;
+    widget.onReplaceAll!(_searchController.text, _replaceController.text);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -129,12 +150,28 @@ class _FindDialogState extends State<FindDialog> {
               ),
               const SizedBox(width: 8),
               Text(
-                'Find',
+                _showReplace ? 'Find & Replace' : 'Find',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
               ),
               const Spacer(),
+              // Toggle replace button
+              IconButton(
+                icon: Icon(
+                  _showReplace ? Icons.unfold_less : Icons.find_replace,
+                  size: 20,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _showReplace = !_showReplace;
+                  });
+                },
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: _showReplace ? 'Hide replace' : 'Show replace',
+              ),
+              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.close, size: 20),
                 onPressed: widget.onClose,
@@ -180,6 +217,56 @@ class _FindDialogState extends State<FindDialog> {
               _nextMatch();
             },
           ),
+
+          // Replace field (shown when _showReplace is true)
+          if (_showReplace) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _replaceController,
+              focusNode: _replaceFocusNode,
+              decoration: InputDecoration(
+                hintText: 'Replace with...',
+                prefixIcon: const Icon(Icons.edit, size: 20),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+              onSubmitted: (value) {
+                _replace();
+              },
+            ),
+            const SizedBox(height: 12),
+            // Replace buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: matchCount > 0 ? _replace : null,
+                    icon: const Icon(Icons.change_circle, size: 16),
+                    label: const Text('Replace'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: matchCount > 0 ? _replaceAll : null,
+                    icon: const Icon(Icons.find_replace, size: 16),
+                    label: const Text('Replace All'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
 
           // Match count, navigation buttons, and help text
