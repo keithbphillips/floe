@@ -34,6 +34,8 @@ class _EditorScreenState extends State<EditorScreen> {
   int _lastAnalyzedWordCount = 0;
   DateTime? _lastEditTime;
   DateTime? _lastAnalysisTime;
+  int _currentCursorPosition = 0;
+  Timer? _cursorUpdateTimer;
 
   @override
   void initState() {
@@ -54,7 +56,10 @@ class _EditorScreenState extends State<EditorScreen> {
 
       // Update controller if content was loaded
       if (docProvider.content.isNotEmpty && _controller.text != docProvider.content) {
-        _controller.text = docProvider.content;
+        _controller.value = TextEditingValue(
+          text: docProvider.content,
+          selection: const TextSelection.collapsed(offset: 0), // Start at top of document
+        );
       }
 
       _focusNode.requestFocus();
@@ -70,7 +75,17 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _onControllerChanged() {
-    // This will be called whenever controller text changes
+    // Update cursor position with throttling to avoid excessive rebuilds
+    final newCursorPos = _controller.selection.baseOffset;
+
+    _cursorUpdateTimer?.cancel();
+    _cursorUpdateTimer = Timer(const Duration(milliseconds: 300), () {
+      if (_currentCursorPosition != newCursorPos) {
+        setState(() {
+          _currentCursorPosition = newCursorPos;
+        });
+      }
+    });
   }
 
   @override
@@ -99,6 +114,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    _cursorUpdateTimer?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _focusNode.dispose();
@@ -339,10 +355,10 @@ class _EditorScreenState extends State<EditorScreen> {
       debugPrint('File loaded, content length: ${document.content.length}');
       debugPrint('Content preview: ${document.content.substring(0, document.content.length > 100 ? 100 : document.content.length)}');
 
-      // Update controller with new value
+      // Update controller with new value and set cursor to start
       _controller.value = TextEditingValue(
         text: document.content,
-        selection: TextSelection.collapsed(offset: document.content.length),
+        selection: const TextSelection.collapsed(offset: 0), // Start at top of document
       );
 
       debugPrint('Controller updated, text length: ${_controller.text.length}');
@@ -567,6 +583,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   if (!_isFullscreen)
                     StructureBubbleChart(
                       documentContent: document.content,
+                      currentCursorPosition: _currentCursorPosition,
                       onNavigate: (position) {
                         // Navigate to the position
                         _controller.selection = TextSelection.collapsed(offset: position);
@@ -786,6 +803,41 @@ class _EditorScreenState extends State<EditorScreen> {
                 ),
                 child: SceneInfoPanel(
                   onClose: () {}, // No close button needed for margin
+                  currentCursorPosition: _controller.selection.baseOffset,
+                  onNavigateToMatch: (start, end) {
+                    // Update text selection to highlight the found echo word
+                    _controller.selection = TextSelection(
+                      baseOffset: start,
+                      extentOffset: end,
+                    );
+
+                    // Give focus to TextField to show selection and trigger scroll
+                    _focusNode.requestFocus();
+
+                    // Calculate scroll position to center the match vertically
+                    final renderBox = _scrollController.position.context.notificationContext?.findRenderObject() as RenderBox?;
+                    if (renderBox != null) {
+                      // Estimate character position to scroll offset
+                      // This is approximate - a more accurate solution would require measuring actual text layout
+                      final textBeforeMatch = document.content.substring(0, start);
+                      final linesBefore = '\n'.allMatches(textBeforeMatch).length;
+                      final estimatedLineHeight = 24.0; // Approximate line height
+                      final targetOffset = linesBefore * estimatedLineHeight;
+
+                      // Center the target line in the viewport
+                      final viewportHeight = renderBox.size.height;
+                      final centeredOffset = (targetOffset - viewportHeight / 2).clamp(
+                        _scrollController.position.minScrollExtent,
+                        _scrollController.position.maxScrollExtent,
+                      );
+
+                      _scrollController.animateTo(
+                        centeredOffset,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  },
                 ),
               ),
           ],

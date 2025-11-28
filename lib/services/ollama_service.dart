@@ -74,7 +74,7 @@ class OllamaService {
         ? 0
         : sceneText.trim().split(RegExp(r'\s+')).length;
 
-    return '''Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.
+    return '''You are an editorial assistant. Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.
 
 Scene text:
 """
@@ -90,13 +90,32 @@ Extract and return JSON with these fields:
   "tone": "brief emotional tone (1-2 words)",
   "dialogue_percentage": estimated percentage (0-100),
   "word_count": $actualWordCount,
-  "echo_words": ["Look for words that appear CLOSE TOGETHER in the text - within a few sentences of each other, or within the same sentence. Echo words are repetitions that feel noticeable because they're in close proximity, not just words that appear multiple times throughout the entire scene. For example, if 'like' appears 5 times within one paragraph, that's an echo. If 'walked' appears in paragraph 1 and again in paragraph 5, that's NOT an echo. Focus on PROXIMITY and noticeable repetition within short passages. Include meaningful content words (nouns, verbs, adjectives, adverbs) but DO NOT include common function words like: I, you, he, she, it, they, the, a, an, and, but, or, of, in, on, at, to, from, that, this, was, is, had, has, been, said. Return empty array if no echo words found."],
+  "echo_words": ["words that repeat within close proximity - see instructions below"],
   "senses": ["which senses engaged: sight/sound/touch/taste/smell"],
   "stakes": "brief description of what's at risk",
   "hunches": ["2-3 brief suggestions or observations about the scene - things like pacing, clarity, emotional resonance, missing elements, or opportunities"]
 }
 
-CRITICAL: Use exactly $actualWordCount for word_count. For echo_words, focus on PROXIMITY - words that repeat within close range (same paragraph or nearby sentences), NOT just words that appear multiple times across the whole scene.
+CRITICAL INSTRUCTIONS:
+
+1. word_count: Use EXACTLY $actualWordCount
+
+2. echo_words: Analyze the text for "echo words," meaning any word or short phrase repeated too closely together in a way that creates an unintended rhythmic echo when read aloud.
+
+   CRITICAL: NEVER include these words regardless of repetition: the, a, an, I, you, he, she, it, they, we, his, her, their, my, your, this, that, these, those, and, but, or, of, in, on, at, to, from, for, with, by, was, is, are, had, has, have, been, said, like, will, would, could, should, can, may, might, do, does, did, so, as, if, when, where, who, what, which, how, why, not, no, yes, all, some, any, each, every, both, few, many, more, most, much, such, very, just, now, then, than, there, here
+
+   ONLY include words that meet ALL these criteria:
+   - The SAME word appears 3+ times within the SAME paragraph OR within 2-3 consecutive sentences
+   - The repetition creates an unintended rhythmic echo that would be noticeable when reading aloud
+   - MUST be content words (nouns like "door", "room", "hospital"; verbs like "walked", "smiled", "opened"; adjectives like "heavy", "quiet"; or adverbs like "slowly", "quickly")
+   - NEVER include pronouns, articles, prepositions, conjunctions, or auxiliary verbs
+   - EXCLUDE character names (they naturally repeat)
+   - Return MAXIMUM 8 echo words, prioritizing the most noticeable repetitions that disrupt the reading flow
+   - If no true echo words exist, return empty array []
+
+Example: "She walked to the door. The door was locked. She tried the door again." → echo_words: ["door"]
+Example: "He smiled at her. She smiled back. They both smiled." → echo_words: ["smiled"]
+Counter-example: "Martin looked around" (paragraph 1) ... "Martin looked up" (paragraph 5) → NOT an echo (too far apart)
 
 Respond with ONLY the JSON object, nothing else.''';
   }

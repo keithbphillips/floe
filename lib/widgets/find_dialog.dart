@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 class FindDialog extends StatefulWidget {
@@ -32,6 +33,7 @@ class _FindDialogState extends State<FindDialog> {
   int _currentMatchIndex = 0;
   List<Match> _matches = [];
   bool _showReplace = false;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -55,6 +57,7 @@ class _FindDialogState extends State<FindDialog> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     _replaceController.dispose();
     _searchFocusNode.dispose();
@@ -62,7 +65,7 @@ class _FindDialogState extends State<FindDialog> {
     super.dispose();
   }
 
-  void _updateMatches() {
+  void _updateMatches({bool navigate = true}) {
     if (_searchController.text.isEmpty) {
       _matches = [];
       _currentMatchIndex = 0;
@@ -74,8 +77,8 @@ class _FindDialogState extends State<FindDialog> {
     _matches = searchLower.allMatches(contentLower).toList();
     _currentMatchIndex = _matches.isEmpty ? 0 : 0;
 
-    // Navigate to first match
-    if (_matches.isNotEmpty) {
+    // Navigate to first match only if requested
+    if (navigate && _matches.isNotEmpty) {
       _navigateToCurrentMatch();
     }
   }
@@ -208,13 +211,16 @@ class _FindDialogState extends State<FindDialog> {
               ),
             ),
             onChanged: (value) {
+              // Don't do anything on change - wait for Enter key
+              // Just trigger a rebuild to update the UI if needed
+              setState(() {});
+            },
+            onSubmitted: (value) {
+              // Trigger search when Enter is pressed
               widget.onSearch(value);
               setState(() {
                 _updateMatches();
               });
-            },
-            onSubmitted: (value) {
-              _nextMatch();
             },
           ),
 

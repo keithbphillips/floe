@@ -42,6 +42,7 @@ class DocumentProvider extends ChangeNotifier {
     _pendingCursorPos = cursorPos;
 
     // Schedule a throttled focus update (200ms delay)
+    // This will also handle notifyListeners() to prevent rebuilds on every keystroke
     _focusUpdateTimer = Timer(const Duration(milliseconds: 200), () {
       // Update focus region based on cursor position
       final focusRange = FocusHelper.getCurrentSentenceRange(_content, _pendingCursorPos);
@@ -50,9 +51,8 @@ class DocumentProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Notify immediately for content changes (typing responsiveness)
-    // but skip focus calculation
-    notifyListeners();
+    // DO NOT call notifyListeners() here - it causes rebuilds on every keystroke
+    // which severely impacts performance in large documents (20k+ words)
   }
 
   void startAutoSave(int intervalSeconds) {

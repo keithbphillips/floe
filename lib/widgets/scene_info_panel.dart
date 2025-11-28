@@ -1,21 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/scene_analyzer_provider.dart';
+import '../providers/document_provider.dart';
 import '../models/scene_analysis.dart';
 
-class SceneInfoPanel extends StatelessWidget {
+class SceneInfoPanel extends StatefulWidget {
   final VoidCallback onClose;
+  final Function(int start, int end)? onNavigateToMatch;
+  final int currentCursorPosition;
 
   const SceneInfoPanel({
     Key? key,
     required this.onClose,
+    this.onNavigateToMatch,
+    this.currentCursorPosition = 0,
   }) : super(key: key);
+
+  @override
+  State<SceneInfoPanel> createState() => _SceneInfoPanelState();
+}
+
+class _SceneInfoPanelState extends State<SceneInfoPanel> {
+  // Track which occurrence index we're on for each word
+  final Map<String, int> _echoWordIndices = {};
+
+  // Cache the last analyzed scene text and its start position
+  String? _lastAnalyzedSceneText;
+  int? _lastAnalyzedSceneStart;
 
   @override
   Widget build(BuildContext context) {
     final analyzer = context.watch<SceneAnalyzerProvider>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+
+    // Cache the analyzed scene when analysis updates
+    if (analyzer.currentAnalysis != null) {
+      final document = context.read<DocumentProvider>();
+      final sceneText = analyzer.extractCurrentScene(document.content, widget.currentCursorPosition);
+      final sceneStart = document.content.indexOf(sceneText);
+
+      if (sceneStart != -1) {
+        _lastAnalyzedSceneText = sceneText;
+        _lastAnalyzedSceneStart = sceneStart;
+      }
+    }
 
     return Column(
       children: [
@@ -232,13 +261,7 @@ class SceneInfoPanel extends StatelessWidget {
 
         // Echo Words
         if (analysis.echoWords.isNotEmpty)
-          _buildSection(
-            theme,
-            isDark,
-            '⚠️ Echo Words',
-            analysis.echoWords.map((w) => '"$w"').join(', '),
-            warning: true,
-          ),
+          _buildEchoWordsSection(context, theme, isDark, analysis.echoWords),
 
         // Word Count and Length Category
         _buildSection(
@@ -433,6 +456,146 @@ class SceneInfoPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildEchoWordsSection(BuildContext context, ThemeData theme, bool isDark, List<String> echoWords) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '⚠️ Echo Words',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.orange.withOpacity(0.3)),
+            ),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: echoWords.map((word) => InkWell(
+                onTap: widget.onNavigateToMatch != null
+                    ? () => _findAndNavigateToEchoWord(context, word)
+                    : null,
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.orange.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '"$word"',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontSize: 13,
+                          color: Colors.orange[800],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (widget.onNavigateToMatch != null) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.search,
+                          size: 14,
+                          color: Colors.orange[700],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              )).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _findAndNavigateToEchoWord(BuildContext context, String word) {
+    if (widget.onNavigateToMatch == null) return;
+
+    // Use the cached analyzed scene instead of re-extracting
+    if (_lastAnalyzedSceneText == null || _lastAnalyzedSceneStart == null) {
+      debugPrint('No analyzed scene cached');
+      return;
+    }
+
+    final sceneText = _lastAnalyzedSceneText!;
+    final sceneStart = _lastAnalyzedSceneStart!;
+
+    // Search for ALL occurrences of the echo word within the current scene
+    // Use word boundary matching to find whole words only
+    final sceneLower = sceneText.toLowerCase();
+    final searchWord = word.toLowerCase();
+
+    final List<int> occurrences = [];
+    int searchIndex = 0;
+
+    while (searchIndex < sceneLower.length) {
+      final index = sceneLower.indexOf(searchWord, searchIndex);
+      if (index == -1) break;
+
+      // Check for word boundaries (before and after the match)
+      final isWordStart = index == 0 || !_isWordChar(sceneLower[index - 1]);
+      final isWordEnd = (index + searchWord.length >= sceneLower.length) ||
+                        !_isWordChar(sceneLower[index + searchWord.length]);
+
+      if (isWordStart && isWordEnd) {
+        occurrences.add(index);
+      }
+
+      searchIndex = index + 1;
+    }
+
+    if (occurrences.isEmpty) {
+      debugPrint('Echo word "$word" not found in current scene');
+      return;
+    }
+
+    // Get current index for this word, or start at 0
+    final currentIndex = _echoWordIndices[word] ?? 0;
+
+    // Cycle to next occurrence
+    final nextIndex = (currentIndex + 1) % occurrences.length;
+
+    // Update the index for next click
+    setState(() {
+      _echoWordIndices[word] = nextIndex;
+    });
+
+    // Get the relative position of this occurrence
+    final relativeIndex = occurrences[nextIndex];
+
+    // Convert relative position to absolute position in document
+    final absoluteIndex = sceneStart + relativeIndex;
+
+    // Navigate to the found word with highlighting
+    widget.onNavigateToMatch!(absoluteIndex, absoluteIndex + word.length);
+    debugPrint('Navigating to echo word "$word" occurrence ${nextIndex + 1}/${occurrences.length} at position $absoluteIndex');
+  }
+
+  bool _isWordChar(String char) {
+    // Check if character is a letter, digit, or underscore
+    final code = char.codeUnitAt(0);
+    return (code >= 65 && code <= 90) ||   // A-Z
+           (code >= 97 && code <= 122) ||  // a-z
+           (code >= 48 && code <= 57) ||   // 0-9
+           code == 95;                      // underscore
   }
 
   String _formatTimestamp(DateTime timestamp) {

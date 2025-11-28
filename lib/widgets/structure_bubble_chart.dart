@@ -19,11 +19,13 @@ class StructureUnit {
 class StructureBubbleChart extends StatefulWidget {
   final String documentContent;
   final Function(int) onNavigate;
+  final int? currentCursorPosition;
 
   const StructureBubbleChart({
     Key? key,
     required this.documentContent,
     required this.onNavigate,
+    this.currentCursorPosition,
   }) : super(key: key);
 
   @override
@@ -33,6 +35,14 @@ class StructureBubbleChart extends StatefulWidget {
 class _StructureBubbleChartState extends State<StructureBubbleChart> {
   List<StructureUnit>? _cachedUnits;
   String? _lastProcessedContent;
+  final ScrollController _scrollController = ScrollController();
+  int? _lastCenteredIndex;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(StructureBubbleChart oldWidget) {
@@ -41,6 +51,13 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
     if (_lastProcessedContent == null ||
         (widget.documentContent.length - (_lastProcessedContent?.length ?? 0)).abs() > 100) {
       _cachedUnits = null; // Clear cache to force recompute
+    }
+
+    // Auto-scroll to center current bubble when cursor position changes
+    if (widget.currentCursorPosition != oldWidget.currentCursorPosition) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToCurrentBubble();
+      });
     }
   }
 
@@ -60,57 +77,138 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
 
     // Find all scene breaks (two blank lines = three newlines)
     final sceneBreakPattern = RegExp(r'\n\s*\n\s*\n');
-    final sceneBreaks = sceneBreakPattern.allMatches(widget.documentContent).toList();
 
-    // Build list of all boundaries (chapters and scene breaks)
-    final boundaries = <int>[0]; // Start of document
+    if (chapterMatches.isEmpty) {
+      // No chapters - treat entire document as scenes divided by scene breaks
+      final sceneBreaks = sceneBreakPattern.allMatches(widget.documentContent).toList();
 
-    // Add chapter positions
-    for (final match in chapterMatches) {
-      boundaries.add(match.start);
-    }
+      if (sceneBreaks.isEmpty) {
+        // No structure at all - single scene
+        final wordCount = widget.documentContent.trim().isEmpty
+            ? 0
+            : widget.documentContent.trim().split(RegExp(r'\s+')).length;
+        if (wordCount > 10) {
+          units.add(StructureUnit(
+            type: 'scene',
+            startPosition: 0,
+            endPosition: widget.documentContent.length,
+            wordCount: wordCount,
+            label: '1',
+          ));
+        }
+      } else {
+        // Multiple scenes without chapters
+        final boundaries = <int>[0];
+        for (final match in sceneBreaks) {
+          boundaries.add(match.end);
+        }
+        boundaries.add(widget.documentContent.length);
 
-    // Add scene break positions
-    for (final match in sceneBreaks) {
-      boundaries.add(match.end);
-    }
+        int sceneNumber = 1;
+        for (int i = 0; i < boundaries.length - 1; i++) {
+          final start = boundaries[i];
+          final end = boundaries[i + 1];
+          final sectionText = widget.documentContent.substring(start, end);
+          final wordCount = sectionText.trim().isEmpty
+              ? 0
+              : sectionText.trim().split(RegExp(r'\s+')).length;
 
-    boundaries.add(widget.documentContent.length); // End of document
+          if (wordCount > 10) {
+            units.add(StructureUnit(
+              type: 'scene',
+              startPosition: start,
+              endPosition: end,
+              wordCount: wordCount,
+              label: sceneNumber.toString(),
+            ));
+            sceneNumber++;
+          }
+        }
+      }
+    } else {
+      // Has chapters - show both chapter bubbles and scene bubbles
+      for (int chapterIdx = 0; chapterIdx < chapterMatches.length; chapterIdx++) {
+        final chapterMatch = chapterMatches[chapterIdx];
+        final chapterNumber = chapterMatch.group(1);
+        final chapterStart = chapterMatch.start;
 
-    // Sort and deduplicate
-    boundaries.sort();
-    final uniqueBoundaries = boundaries.toSet().toList()..sort();
+        // Find where this chapter ends (next chapter or end of document)
+        final chapterEnd = chapterIdx < chapterMatches.length - 1
+            ? chapterMatches[chapterIdx + 1].start
+            : widget.documentContent.length;
 
-    // Create structure units
-    for (int i = 0; i < uniqueBoundaries.length - 1; i++) {
-      final start = uniqueBoundaries[i];
-      final end = uniqueBoundaries[i + 1];
-      final sectionText = widget.documentContent.substring(start, end);
+        // Calculate total chapter word count
+        final chapterText = widget.documentContent.substring(chapterStart, chapterEnd);
+        final chapterWordCount = chapterText.trim().isEmpty
+            ? 0
+            : chapterText.trim().split(RegExp(r'\s+')).length;
 
-      // Calculate word count
-      final wordCount = sectionText.trim().isEmpty
-          ? 0
-          : sectionText.trim().split(RegExp(r'\s+')).length;
+        // Add chapter bubble
+        if (chapterWordCount > 10) {
+          units.add(StructureUnit(
+            type: 'chapter',
+            startPosition: chapterStart,
+            endPosition: chapterEnd,
+            wordCount: chapterWordCount,
+            label: chapterNumber,
+          ));
+        }
 
-      // Check if this section starts with a chapter heading
-      final trimmedText = sectionText.trim();
-      final chapterMatch = RegExp(r'^Chapter\s+(\d+)', caseSensitive: false).firstMatch(trimmedText);
+        // Get chapter content (excluding the chapter heading line)
+        final chapterHeadingEnd = widget.documentContent.indexOf('\n', chapterStart);
+        final chapterContentStart = chapterHeadingEnd != -1 ? chapterHeadingEnd + 1 : chapterStart;
+        final chapterContent = widget.documentContent.substring(chapterContentStart, chapterEnd);
 
-      if (chapterMatch != null) {
-        units.add(StructureUnit(
-          type: 'chapter',
-          startPosition: start,
-          endPosition: end,
-          wordCount: wordCount,
-          label: chapterMatch.group(1),
-        ));
-      } else if (wordCount > 10) { // Only show scenes with meaningful content
-        units.add(StructureUnit(
-          type: 'scene',
-          startPosition: start,
-          endPosition: end,
-          wordCount: wordCount,
-        ));
+        // Find scene breaks within this chapter
+        final scenesInChapter = sceneBreakPattern.allMatches(chapterContent).toList();
+
+        if (scenesInChapter.isEmpty) {
+          // Chapter has no scene breaks - entire chapter is one scene
+          final wordCount = chapterContent.trim().isEmpty
+              ? 0
+              : chapterContent.trim().split(RegExp(r'\s+')).length;
+
+          if (wordCount > 10) {
+            units.add(StructureUnit(
+              type: 'scene',
+              startPosition: chapterContentStart,
+              endPosition: chapterEnd,
+              wordCount: wordCount,
+              label: 'Ch $chapterNumber',
+            ));
+          }
+        } else {
+          // Chapter has scene breaks - create multiple scenes
+          final sceneBoundaries = <int>[0]; // Relative to chapter content start
+          for (final match in scenesInChapter) {
+            sceneBoundaries.add(match.end);
+          }
+          sceneBoundaries.add(chapterContent.length);
+
+          int sceneNumber = 1;
+          for (int i = 0; i < sceneBoundaries.length - 1; i++) {
+            final relativeStart = sceneBoundaries[i];
+            final relativeEnd = sceneBoundaries[i + 1];
+            final absoluteStart = chapterContentStart + relativeStart;
+            final absoluteEnd = chapterContentStart + relativeEnd;
+
+            final sceneText = widget.documentContent.substring(absoluteStart, absoluteEnd);
+            final wordCount = sceneText.trim().isEmpty
+                ? 0
+                : sceneText.trim().split(RegExp(r'\s+')).length;
+
+            if (wordCount > 10) {
+              units.add(StructureUnit(
+                type: 'scene',
+                startPosition: absoluteStart,
+                endPosition: absoluteEnd,
+                wordCount: wordCount,
+                label: 'Ch $chapterNumber.$sceneNumber',
+              ));
+              sceneNumber++;
+            }
+          }
+        }
       }
     }
 
@@ -119,6 +217,67 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
     _lastProcessedContent = widget.documentContent;
 
     return units;
+  }
+
+  void _scrollToCurrentBubble() {
+    if (!_scrollController.hasClients) return;
+    if (widget.currentCursorPosition == null) return;
+
+    final units = _extractStructure();
+    if (units.isEmpty) return;
+
+    // Find which bubble contains the current cursor position
+    int currentIndex = -1;
+    for (int i = 0; i < units.length; i++) {
+      final unit = units[i];
+      if (widget.currentCursorPosition! >= unit.startPosition &&
+          widget.currentCursorPosition! < unit.endPosition) {
+        // Prefer scenes over chapters if cursor is in both
+        if (unit.type == 'scene') {
+          currentIndex = i;
+          break;
+        } else if (currentIndex == -1) {
+          currentIndex = i;
+        }
+      }
+    }
+
+    if (currentIndex == -1 || currentIndex == _lastCenteredIndex) return;
+
+    _lastCenteredIndex = currentIndex;
+
+    // Calculate bubble position and scroll to center it
+    // Each bubble has width (bubbleSize) + padding (8px total)
+    final maxWordCount = units.map((u) => u.wordCount).reduce((a, b) => a > b ? a : b);
+    const minBubbleSize = 12.0;
+    const maxBubbleSize = 32.0;
+
+    double totalOffset = 0;
+    for (int i = 0; i < currentIndex; i++) {
+      final unit = units[i];
+      final sizeRatio = maxWordCount > 0 ? unit.wordCount / maxWordCount : 0.5;
+      final bubbleSize = minBubbleSize + (sizeRatio * (maxBubbleSize - minBubbleSize));
+      totalOffset += bubbleSize + 8; // bubble width + horizontal padding
+    }
+
+    // Add half of current bubble size to center it
+    final currentUnit = units[currentIndex];
+    final currentSizeRatio = maxWordCount > 0 ? currentUnit.wordCount / maxWordCount : 0.5;
+    final currentBubbleSize = minBubbleSize + (currentSizeRatio * (maxBubbleSize - minBubbleSize));
+    totalOffset += currentBubbleSize / 2;
+
+    // Center in viewport
+    final viewportWidth = _scrollController.position.viewportDimension;
+    final targetScroll = (totalOffset - (viewportWidth / 2)).clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
+    );
+
+    _scrollController.animateTo(
+      targetScroll,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   @override
@@ -149,6 +308,7 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
         ),
       ),
       child: ListView.builder(
+        controller: _scrollController,
         scrollDirection: Axis.horizontal,
         itemCount: units.length,
         itemBuilder: (context, index) {
@@ -168,7 +328,7 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
             child: Tooltip(
               message: isChapter
                   ? 'Chapter ${unit.label}\n${unit.wordCount} words'
-                  : 'Scene ${index + 1}\n${unit.wordCount} words',
+                  : 'Scene ${unit.label}\n${unit.wordCount} words',
               child: InkWell(
                 onTap: () => widget.onNavigate(unit.startPosition),
                 borderRadius: BorderRadius.circular(bubbleSize / 2),

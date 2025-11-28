@@ -73,15 +73,14 @@ class SceneAnalyzerProvider extends ChangeNotifier {
         : text.trim().split(RegExp(r'\s+')).length;
 
     final characters = _ollamaService.extractCharactersSimple(text);
-    final echoWords = _ollamaService.findEchoWords(text);
     final dialoguePercentage = _ollamaService.calculateDialoguePercentage(text);
 
-    debugPrint('Simple analysis created - word count: $wordCount, echo words: ${echoWords.keys.toList()}');
+    debugPrint('Simple analysis created - word count: $wordCount (no echo words - LLM only)');
 
     return SceneAnalysis(
       characters: characters,
       wordCount: wordCount,
-      echoWords: echoWords.keys.toList(),
+      echoWords: [], // Only use LLM-detected echo words, no fallback
       dialoguePercentage: dialoguePercentage,
       analyzedAt: DateTime.now(),
     );
@@ -94,45 +93,96 @@ class SceneAnalyzerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Extract current scene from document
+  /// Extract current scene from document using the same logic as bubble chart
+  /// Chapters always contain scenes - either a single scene if no scene breaks,
+  /// or multiple scenes if scene breaks exist within the chapter
   String extractCurrentScene(String fullText, int cursorPosition) {
     if (fullText.isEmpty) return '';
 
-    // Find all scene break positions (two blank lines = three newlines)
-    // This is the standard manuscript format for scene breaks
-    final breakPattern = RegExp(r'\n\s*\n\s*\n');
-    final matches = breakPattern.allMatches(fullText);
+    final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
+    final chapterMatches = chapterPattern.allMatches(fullText).toList();
+    final sceneBreakPattern = RegExp(r'\n\s*\n\s*\n');
 
-    if (matches.isEmpty) {
-      // No scene breaks, return entire text
-      debugPrint('No scene breaks found, returning full text (${fullText.length} chars)');
-      return fullText;
-    }
+    if (chapterMatches.isEmpty) {
+      // No chapters - treat document as scenes divided by scene breaks
+      final sceneBreaks = sceneBreakPattern.allMatches(fullText).toList();
 
-    // Build list of scene boundaries
-    final breakPositions = <int>[0]; // Start of first scene
-    for (final match in matches) {
-      breakPositions.add(match.end); // Start of next scene after break
-    }
-    breakPositions.add(fullText.length); // End of last scene
+      if (sceneBreaks.isEmpty) {
+        // No structure - entire document is one scene
+        debugPrint('No structure found, returning full text (${fullText.length} chars)');
+        return fullText;
+      }
 
-    // Find which scene contains the cursor
-    for (int i = 0; i < breakPositions.length - 1; i++) {
-      final sceneStart = breakPositions[i];
-      final sceneEnd = breakPositions[i + 1];
+      // Multiple scenes without chapters - find which scene contains cursor
+      final boundaries = <int>[0];
+      for (final match in sceneBreaks) {
+        boundaries.add(match.end);
+      }
+      boundaries.add(fullText.length);
 
-      if (cursorPosition >= sceneStart && cursorPosition <= sceneEnd) {
-        final scene = fullText.substring(sceneStart, sceneEnd).trim();
-        debugPrint('Extracted scene ${i + 1}/${breakPositions.length - 1}: ${scene.length} chars, cursor at $cursorPosition');
-        debugPrint('Scene preview: ${scene.substring(0, scene.length > 200 ? 200 : scene.length)}...');
-        return scene;
+      for (int i = 0; i < boundaries.length - 1; i++) {
+        final start = boundaries[i];
+        final end = boundaries[i + 1];
+        if (cursorPosition >= start && cursorPosition < end) {
+          final sceneText = fullText.substring(start, end).trim();
+          debugPrint('Extracted scene ${i + 1}: ${sceneText.length} chars');
+          return sceneText;
+        }
+      }
+    } else {
+      // Has chapters - find which chapter contains cursor, then find scene within it
+      for (int chapterIdx = 0; chapterIdx < chapterMatches.length; chapterIdx++) {
+        final chapterMatch = chapterMatches[chapterIdx];
+        final chapterStart = chapterMatch.start;
+        final chapterEnd = chapterIdx < chapterMatches.length - 1
+            ? chapterMatches[chapterIdx + 1].start
+            : fullText.length;
+
+        if (cursorPosition >= chapterStart && cursorPosition < chapterEnd) {
+          // Cursor is in this chapter - now find the scene within it
+          final chapterNumber = chapterMatch.group(1);
+
+          // Get chapter content (excluding chapter heading)
+          final chapterHeadingEnd = fullText.indexOf('\n', chapterStart);
+          final chapterContentStart = chapterHeadingEnd != -1 ? chapterHeadingEnd + 1 : chapterStart;
+          final chapterContent = fullText.substring(chapterContentStart, chapterEnd);
+
+          // Find scene breaks within this chapter
+          final scenesInChapter = sceneBreakPattern.allMatches(chapterContent).toList();
+
+          if (scenesInChapter.isEmpty) {
+            // Chapter has no scene breaks - entire chapter content is one scene
+            debugPrint('Extracted Ch $chapterNumber (single scene): ${chapterContent.length} chars');
+            return chapterContent.trim();
+          } else {
+            // Chapter has multiple scenes - find which scene contains cursor
+            final sceneBoundaries = <int>[0];
+            for (final match in scenesInChapter) {
+              sceneBoundaries.add(match.end);
+            }
+            sceneBoundaries.add(chapterContent.length);
+
+            // Convert cursor position to relative position within chapter content
+            final relativeCursorPos = cursorPosition - chapterContentStart;
+
+            for (int i = 0; i < sceneBoundaries.length - 1; i++) {
+              final relativeStart = sceneBoundaries[i];
+              final relativeEnd = sceneBoundaries[i + 1];
+
+              if (relativeCursorPos >= relativeStart && relativeCursorPos < relativeEnd) {
+                final sceneText = chapterContent.substring(relativeStart, relativeEnd).trim();
+                debugPrint('Extracted Ch $chapterNumber.${i + 1}: ${sceneText.length} chars');
+                return sceneText;
+              }
+            }
+          }
+        }
       }
     }
 
-    // Fallback: return last scene
-    final lastScene = fullText.substring(breakPositions[breakPositions.length - 2]).trim();
-    debugPrint('Cursor beyond scenes, returning last scene: ${lastScene.length} chars');
-    return lastScene;
+    // Fallback - return entire document
+    debugPrint('Fallback: returning full text');
+    return fullText;
   }
 
   int _getLineNumber(String text, int position) {
