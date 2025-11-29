@@ -103,16 +103,16 @@ flutter build linux --release    # Linux
 ## Usage
 
 ### Keyboard Shortcuts
-- **Ctrl+N**: New document
-- **Ctrl+O**: Open file
-- **Ctrl+S**: Save As
-- **Ctrl+A**: Force scene analysis
+- **Ctrl+M**: Insert em dash (—)
+- **Ctrl+I**: Toggle italics
 - **Ctrl+D**: Toggle dark mode
-- **Ctrl+F**: Toggle focus mode
+- **Ctrl+F**: Find and replace
 - **Ctrl+,**: Open settings
+- **Ctrl+Shift+A**: Force scene analysis
+- **Ctrl+Shift+F**: Toggle focus mode
 - **Ctrl+Shift+W**: Toggle word count
 - **F11**: Toggle fullscreen
-- **Escape**: Show/hide file menu
+- **Escape**: Close find dialog / Toggle menu bar
 
 ### Scene Breaks
 Use **two blank lines** (press Enter 3 times) to separate scenes. Floe will automatically detect and analyze each scene independently.
@@ -123,7 +123,7 @@ Floe analyzes your writing automatically when:
 - At least 50 words have been added
 - At least 30 seconds have passed since the last analysis
 
-Press **Ctrl+A** to force an immediate analysis.
+Press **Ctrl+Shift+A** to force an immediate analysis.
 
 ## Configuration
 
