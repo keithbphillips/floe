@@ -163,16 +163,23 @@ class DocumentProvider extends ChangeNotifier {
           final bookmark = prefs.getString(_lastFileBookmarkKey);
           if (bookmark != null) {
             try {
-              // Start accessing the security-scoped resource
+              // Resolve the bookmark to get the file entity
               final resolvedEntity = await _secureBookmarks.resolveBookmark(bookmark);
               if (resolvedEntity != null) {
-                debugPrint('Resolved security bookmark for: $lastPath');
-                // The bookmark gives us access, now we can load the file
-                final resolvedFile = File(resolvedEntity.path);
-                await _loadFileWithAccess(lastPath, resolvedFile);
-                // Stop accessing when done
-                await _secureBookmarks.stopAccessingSecurityScopedResource(resolvedEntity);
-                return;
+                debugPrint('Resolved security bookmark to: ${resolvedEntity.path}');
+
+                // Start accessing the security-scoped resource
+                await _secureBookmarks.startAccessingSecurityScopedResource(resolvedEntity);
+
+                try {
+                  // Use the resolved path from the bookmark
+                  final resolvedFile = File(resolvedEntity.path);
+                  await _loadFileWithAccess(resolvedEntity.path, resolvedFile);
+                  return;
+                } finally {
+                  // Always stop accessing when done, even if an error occurs
+                  await _secureBookmarks.stopAccessingSecurityScopedResource(resolvedEntity);
+                }
               } else {
                 debugPrint('Failed to resolve security bookmark, bookmark may be stale');
               }
