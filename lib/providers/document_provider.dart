@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:macos_secure_bookmarks/macos_secure_bookmarks.dart';
 import '../services/focus_helper.dart';
 
 class DocumentProvider extends ChangeNotifier {
   static const String _lastFilePathKey = 'last_file_path';
+  static const String _lastFileBookmarkKey = 'last_file_bookmark';
+  final SecureBookmarks _secureBookmarks = SecureBookmarks();
   String _content = '';
   String? _filePath;
   bool _hasUnsavedChanges = false;
@@ -155,6 +158,31 @@ class DocumentProvider extends ChangeNotifier {
       final lastPath = prefs.getString(_lastFilePathKey);
 
       if (lastPath != null && lastPath.isNotEmpty) {
+        // On macOS, resolve the security bookmark first to restore access
+        if (defaultTargetPlatform == TargetPlatform.macOS) {
+          final bookmark = prefs.getString(_lastFileBookmarkKey);
+          if (bookmark != null) {
+            try {
+              // Start accessing the security-scoped resource
+              final resolvedEntity = await _secureBookmarks.resolveBookmark(bookmark);
+              if (resolvedEntity != null) {
+                debugPrint('Resolved security bookmark for: $lastPath');
+                // The bookmark gives us access, now we can load the file
+                final resolvedFile = File(resolvedEntity.path);
+                await _loadFileWithAccess(lastPath, resolvedFile);
+                // Stop accessing when done
+                await _secureBookmarks.stopAccessingSecurityScopedResource(resolvedEntity);
+                return;
+              } else {
+                debugPrint('Failed to resolve security bookmark, bookmark may be stale');
+              }
+            } catch (e) {
+              debugPrint('Error resolving security bookmark: $e');
+            }
+          }
+        }
+
+        // Fallback for non-macOS or if bookmark resolution fails
         final file = File(lastPath);
         if (await file.exists()) {
           debugPrint('Loading last file: $lastPath');
@@ -169,11 +197,44 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
+  /// Load file content with security-scoped access already granted
+  Future<void> _loadFileWithAccess(String path, File resolvedFile) async {
+    try {
+      final bytes = await resolvedFile.readAsBytes();
+      final content = utf8.decode(bytes, allowMalformed: true);
+      debugPrint('Successfully decoded file using UTF-8');
+
+      _content = content;
+      _filePath = path;
+      _hasUnsavedChanges = false;
+      _cursorPosition = 0;
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Load failed: $e');
+      rethrow;
+    }
+  }
+
   /// Save the last file path to preferences
   Future<void> _saveLastFilePath(String path) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_lastFilePathKey, path);
+
+      // On macOS, also create and store a security bookmark
+      if (defaultTargetPlatform == TargetPlatform.macOS) {
+        try {
+          final bookmark = await _secureBookmarks.bookmark(File(path));
+          if (bookmark != null) {
+            await prefs.setString(_lastFileBookmarkKey, bookmark);
+            debugPrint('Saved security bookmark for: $path');
+          }
+        } catch (e) {
+          debugPrint('Failed to create security bookmark: $e');
+        }
+      }
+
       debugPrint('Saved last file path: $path');
     } catch (e) {
       debugPrint('Failed to save last file path: $e');
@@ -185,6 +246,11 @@ class DocumentProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_lastFilePathKey);
+
+      // Also remove the bookmark on macOS
+      if (defaultTargetPlatform == TargetPlatform.macOS) {
+        await prefs.remove(_lastFileBookmarkKey);
+      }
     } catch (e) {
       debugPrint('Failed to clear last file path: $e');
     }

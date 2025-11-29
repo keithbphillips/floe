@@ -19,6 +19,7 @@ dependencies:
 
   # File operations
   file_picker: ^6.1.1
+  macos_secure_bookmarks: ^0.2.1
 
   # Markdown support
   markdown: ^7.2.1
