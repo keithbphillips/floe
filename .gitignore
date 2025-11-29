@@ -42,3 +42,21 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# User data and preferences (stored locally via SharedPreferences)
+# Note: User settings including API keys are stored in system locations:
+# - Windows: %LOCALAPPDATA%\Packages\<app_package>\LocalState\shared_preferences
+# - macOS: ~/Library/Containers/<app_package>/Data/Library/Preferences
+# - Linux: ~/.local/share/<app_package>
+# These are NOT in the git repo and will never be committed
+
+# Build artifacts for distribution
+/floe-windows/
+/floe-macos/
+/floe-linux/
+
+# Test files and temporary data
+test_*.dart
+*.md
+!README.md
+nul
