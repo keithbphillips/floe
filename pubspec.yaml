@@ -37,6 +37,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -51,3 +52,13 @@ flutter:
     - family: IBMPlexMono
       fonts:
         - asset: assets/fonts/IBMPlexMono-Regular.ttf
+
+flutter_launcher_icons:
+  image_path: "Flow_ICON.jpg"
+  windows:
+    generate: true
+    icon_size: 256
+  macos:
+    generate: true
+  linux:
+    generate: true
