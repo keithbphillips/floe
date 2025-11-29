@@ -6,6 +6,9 @@ class AppSettings {
   final bool focusMode;
   final double focusIntensity;
   final int autoSaveInterval; // in seconds
+  final String aiProvider; // 'ollama' or 'openai'
+  final String openAiApiKey;
+  final String openAiModel;
 
   const AppSettings({
     this.isDarkMode = false,
@@ -15,6 +18,9 @@ class AppSettings {
     this.focusMode = false,
     this.focusIntensity = 0.3,
     this.autoSaveInterval = 3,
+    this.aiProvider = 'ollama',
+    this.openAiApiKey = '',
+    this.openAiModel = 'gpt-4o-mini',
   });
 
   AppSettings copyWith({
@@ -25,6 +31,9 @@ class AppSettings {
     bool? focusMode,
     double? focusIntensity,
     int? autoSaveInterval,
+    String? aiProvider,
+    String? openAiApiKey,
+    String? openAiModel,
   }) {
     return AppSettings(
       isDarkMode: isDarkMode ?? this.isDarkMode,
@@ -34,6 +43,9 @@ class AppSettings {
       focusMode: focusMode ?? this.focusMode,
       focusIntensity: focusIntensity ?? this.focusIntensity,
       autoSaveInterval: autoSaveInterval ?? this.autoSaveInterval,
+      aiProvider: aiProvider ?? this.aiProvider,
+      openAiApiKey: openAiApiKey ?? this.openAiApiKey,
+      openAiModel: openAiModel ?? this.openAiModel,
     );
   }
 
@@ -46,6 +58,9 @@ class AppSettings {
       'focusMode': focusMode,
       'focusIntensity': focusIntensity,
       'autoSaveInterval': autoSaveInterval,
+      'aiProvider': aiProvider,
+      'openAiApiKey': openAiApiKey,
+      'openAiModel': openAiModel,
     };
   }
 
@@ -58,6 +73,9 @@ class AppSettings {
       focusMode: json['focusMode'] ?? false,
       focusIntensity: json['focusIntensity'] ?? 0.3,
       autoSaveInterval: json['autoSaveInterval'] ?? 3,
+      aiProvider: json['aiProvider'] ?? 'ollama',
+      openAiApiKey: json['openAiApiKey'] ?? '',
+      openAiModel: json['openAiModel'] ?? 'gpt-4o-mini',
     );
   }
 }

@@ -18,6 +18,9 @@ class AppSettingsProvider extends ChangeNotifier {
   bool get focusMode => _settings.focusMode;
   double get focusIntensity => _settings.focusIntensity;
   int get autoSaveInterval => _settings.autoSaveInterval;
+  String get aiProvider => _settings.aiProvider;
+  String get openAiApiKey => _settings.openAiApiKey;
+  String get openAiModel => _settings.openAiModel;
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -71,6 +74,24 @@ class AppSettingsProvider extends ChangeNotifier {
 
   void setAutoSaveInterval(int seconds) {
     _settings = _settings.copyWith(autoSaveInterval: seconds);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setAiProvider(String provider) {
+    _settings = _settings.copyWith(aiProvider: provider);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setOpenAiApiKey(String apiKey) {
+    _settings = _settings.copyWith(openAiApiKey: apiKey);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setOpenAiModel(String model) {
+    _settings = _settings.copyWith(openAiModel: model);
     _saveSettings();
     notifyListeners();
   }

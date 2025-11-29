@@ -3,33 +3,41 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'ai_service.dart';
 
-class OllamaService implements AiService {
-  final String baseUrl;
+class OpenAiService implements AiService {
+  final String apiKey;
   final String model;
+  static const String baseUrl = 'https://api.openai.com/v1';
 
-  OllamaService({
-    this.baseUrl = 'http://localhost:11434',
-    this.model = 'llama3.2:3b',
+  OpenAiService({
+    required this.apiKey,
+    this.model = 'gpt-4o-mini',
   });
 
-  /// Test if Ollama is available
+  /// Test if OpenAI API is available (by checking if API key is set)
   @override
   Future<bool> isAvailable() async {
+    if (apiKey.isEmpty) return false;
+
     try {
-      final response = await http.get(Uri.parse(baseUrl)).timeout(
-        const Duration(seconds: 2),
-      );
+      // Quick validation call to models endpoint
+      final response = await http.get(
+        Uri.parse('$baseUrl/models'),
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+        },
+      ).timeout(const Duration(seconds: 5));
+
       return response.statusCode == 200;
     } catch (e) {
-      debugPrint('Ollama not available: $e');
+      debugPrint('OpenAI not available: $e');
       return false;
     }
   }
 
-  /// Analyze a scene using the local LLM
+  /// Analyze a scene using OpenAI's API
   @override
   Future<Map<String, dynamic>?> analyzeScene(String sceneText) async {
-    if (sceneText.trim().isEmpty) return null;
+    if (sceneText.trim().isEmpty || apiKey.isEmpty) return null;
 
     // Calculate word count upfront so we can use it as fallback
     final actualWordCount = sceneText.trim().split(RegExp(r'\s+')).length;
@@ -38,22 +46,31 @@ class OllamaService implements AiService {
       final prompt = _buildAnalysisPrompt(sceneText);
 
       final response = await http.post(
-        Uri.parse('$baseUrl/api/generate'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$baseUrl/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
         body: json.encode({
           'model': model,
-          'prompt': prompt,
-          'stream': false,
-          'options': {
-            'temperature': 0.3, // Lower for more consistent analysis
-            'num_predict': 500, // Limit response length
-          },
+          'messages': [
+            {
+              'role': 'system',
+              'content': 'You are an editorial assistant that analyzes literary fiction. Respond ONLY with valid JSON, no other text.'
+            },
+            {
+              'role': 'user',
+              'content': prompt,
+            }
+          ],
+          'temperature': 0.3,
+          'max_tokens': 1000,
         }),
       ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final analysisText = data['response'] as String;
+        final analysisText = data['choices'][0]['message']['content'] as String;
         final parsedResult = _parseAnalysis(analysisText);
 
         // Ensure word_count is always present
@@ -62,6 +79,8 @@ class OllamaService implements AiService {
         }
 
         return parsedResult;
+      } else {
+        debugPrint('OpenAI API error: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       debugPrint('Scene analysis error: $e');
@@ -70,14 +89,14 @@ class OllamaService implements AiService {
     return null;
   }
 
-  /// Build the analysis prompt for the LLM
+  /// Build the analysis prompt for the AI
   String _buildAnalysisPrompt(String sceneText) {
     // Pre-calculate word count to ensure accuracy
     final actualWordCount = sceneText.trim().isEmpty
         ? 0
         : sceneText.trim().split(RegExp(r'\s+')).length;
 
-    return '''You are an editorial assistant. Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.
+    return '''Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.
 
 Scene text:
 """
@@ -123,8 +142,8 @@ Counter-example: "Martin looked around" (paragraph 1) ... "Martin looked up" (pa
 Respond with ONLY the JSON object, nothing else.''';
   }
 
-  /// Parse the LLM response into structured data
-  Map<String, dynamic> _parseAnalysis(String analysisText) {
+  /// Parse the AI response into structured data
+  Map<String, dynamic>? _parseAnalysis(String analysisText) {
     try {
       // Try to extract JSON from the response
       final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(analysisText);
@@ -142,7 +161,7 @@ Respond with ONLY the JSON object, nothing else.''';
     }
   }
 
-  /// Quick character extraction (fallback without LLM)
+  /// Quick character extraction (fallback without AI)
   @override
   List<String> extractCharactersSimple(String text) {
     // Simple capitalized word detection
@@ -158,43 +177,6 @@ Respond with ONLY the JSON object, nothing else.''';
     }
 
     return names.toList()..sort();
-  }
-
-  /// Find echo words (words repeated within close proximity)
-  /// Only flags words that appear 2+ times within a 50-word window
-  Map<String, int> findEchoWords(String text) {
-    final words = text.toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s]'), '')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.length > 3 && !_stopWords.contains(w))
-        .toList();
-
-    final echoWords = <String, int>{};
-    const windowSize = 50; // Check within 50-word windows
-
-    // Scan through the text with a sliding window
-    for (int i = 0; i < words.length; i++) {
-      final word = words[i];
-      final windowEnd = (i + windowSize < words.length) ? i + windowSize : words.length;
-
-      // Count occurrences of this word within the window
-      int countInWindow = 0;
-      for (int j = i; j < windowEnd; j++) {
-        if (words[j] == word) {
-          countInWindow++;
-        }
-      }
-
-      // If word appears 2+ times in this window, flag it as an echo
-      if (countInWindow >= 2) {
-        echoWords[word] = (echoWords[word] ?? 0) + 1;
-      }
-    }
-
-    // Return words sorted by frequency
-    return Map.fromEntries(
-      echoWords.entries.toList()..sort((a, b) => b.value.compareTo(a.value)),
-    );
   }
 
   /// Calculate dialogue percentage
@@ -223,13 +205,5 @@ Respond with ONLY the JSON object, nothing else.''';
     'because', 'any', 'these', 'give', 'day', 'most', 'us', 'chapter',
     'myself', 'himself', 'herself', 'themselves', 'something', 'nothing',
     'everything', 'anything', 'someone', 'anyone', 'everyone', 'before',
-  };
-
-  static final Set<String> _stopWords = {
-    'the', 'and', 'that', 'this', 'with', 'from', 'have', 'they',
-    'was', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her',
-    'his', 'she', 'had', 'has', 'said', 'been', 'will', 'more',
-    'were', 'their', 'would', 'there', 'could', 'should', 'about',
-    'which', 'these', 'those', 'them', 'some', 'into', 'like',
   };
 }

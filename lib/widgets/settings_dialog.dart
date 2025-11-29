@@ -114,6 +114,37 @@ class SettingsDialog extends StatelessWidget {
                     ),
 
                     const SizedBox(height: 32),
+                    _buildSectionTitle('AI Provider', isDark),
+                    const SizedBox(height: 16),
+
+                    _buildDropdownSetting(
+                      'AI Service',
+                      settings.aiProvider,
+                      ['ollama', 'openai'],
+                      (value) => settings.setAiProvider(value!),
+                      isDark,
+                    ),
+
+                    if (settings.aiProvider == 'openai') ...[
+                      const SizedBox(height: 16),
+                      _buildTextFieldSetting(
+                        'OpenAI API Key',
+                        settings.openAiApiKey,
+                        (value) => settings.setOpenAiApiKey(value),
+                        isDark,
+                        obscureText: true,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildDropdownSetting(
+                        'OpenAI Model',
+                        settings.openAiModel,
+                        ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+                        (value) => settings.setOpenAiModel(value!),
+                        isDark,
+                      ),
+                    ],
+
+                    const SizedBox(height: 32),
                     _buildSectionTitle('Auto-Save', isDark),
                     const SizedBox(height: 16),
 
@@ -258,6 +289,56 @@ class SettingsDialog extends StatelessWidget {
             );
           }).toList(),
           onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextFieldSetting(
+    String label,
+    String value,
+    Function(String) onChanged,
+    bool isDark, {
+    bool obscureText = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            color: isDark ? Colors.white70 : Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: TextEditingController(text: value)
+            ..selection = TextSelection.fromPosition(
+              TextPosition(offset: value.length),
+            ),
+          obscureText: obscureText,
+          onChanged: onChanged,
+          style: TextStyle(
+            fontSize: 14,
+            color: isDark ? Colors.white70 : Colors.black87,
+          ),
+          decoration: InputDecoration(
+            hintText: obscureText ? 'Enter your API key' : 'Enter value',
+            hintStyle: TextStyle(
+              color: isDark ? Colors.white38 : Colors.black38,
+            ),
+            filled: true,
+            fillColor: isDark ? const Color(0xFF1A1A1A) : Colors.grey[100],
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 8,
+            ),
+          ),
         ),
       ],
     );

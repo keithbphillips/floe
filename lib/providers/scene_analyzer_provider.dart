@@ -1,27 +1,50 @@
 import 'package:flutter/material.dart';
 import '../models/scene_analysis.dart';
+import '../services/ai_service.dart';
 import '../services/ollama_service.dart';
+import '../services/openai_service.dart';
 
 class SceneAnalyzerProvider extends ChangeNotifier {
-  final OllamaService _ollamaService;
+  AiService? _aiService;
   SceneAnalysis? _currentAnalysis;
   bool _isAnalyzing = false;
-  bool _ollamaAvailable = false;
+  bool _aiAvailable = false;
   String? _error;
+  String _currentProvider = 'ollama';
 
-  SceneAnalyzerProvider({OllamaService? ollamaService})
-      : _ollamaService = ollamaService ?? OllamaService() {
-    _checkOllamaAvailability();
+  SceneAnalyzerProvider() {
+    _aiService = OllamaService();
+    _checkAiAvailability();
+  }
+
+  /// Update the AI service based on settings
+  void updateAiService(String provider, {String? apiKey, String? model}) {
+    _currentProvider = provider;
+
+    if (provider == 'openai') {
+      _aiService = OpenAiService(
+        apiKey: apiKey ?? '',
+        model: model ?? 'gpt-4o-mini',
+      );
+    } else {
+      _aiService = OllamaService();
+    }
+
+    _checkAiAvailability();
   }
 
   SceneAnalysis? get currentAnalysis => _currentAnalysis;
   bool get isAnalyzing => _isAnalyzing;
-  bool get ollamaAvailable => _ollamaAvailable;
+  bool get aiAvailable => _aiAvailable;
+  bool get ollamaAvailable => _aiAvailable; // Keep for backwards compatibility
   String? get error => _error;
+  String get currentProvider => _currentProvider;
 
-  Future<void> _checkOllamaAvailability() async {
-    _ollamaAvailable = await _ollamaService.isAvailable();
-    notifyListeners();
+  Future<void> _checkAiAvailability() async {
+    if (_aiService != null) {
+      _aiAvailable = await _aiService!.isAvailable();
+      notifyListeners();
+    }
   }
 
   /// Analyze the current scene
@@ -33,28 +56,28 @@ class SceneAnalyzerProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (_ollamaAvailable) {
-        // Use LLM for full analysis
-        debugPrint('=== Analyzing scene (${sceneText.length} chars) ===');
-        final analysisData = await _ollamaService.analyzeScene(sceneText);
+      if (_aiAvailable && _aiService != null) {
+        // Use AI for full analysis
+        debugPrint('=== Analyzing scene with $_currentProvider (${sceneText.length} chars) ===');
+        final analysisData = await _aiService!.analyzeScene(sceneText);
 
         if (analysisData != null && !analysisData.containsKey('error')) {
-          debugPrint('LLM analysis data: $analysisData');
-          debugPrint('Echo words from LLM: ${analysisData['echo_words']}');
+          debugPrint('AI analysis data: $analysisData');
+          debugPrint('Echo words from AI: ${analysisData['echo_words']}');
           _currentAnalysis = SceneAnalysis.fromJson(analysisData);
           debugPrint('After parsing, echo words: ${_currentAnalysis?.echoWords}');
           debugPrint('Word count: ${_currentAnalysis?.wordCount}');
         } else {
           // Fallback to simple analysis
-          debugPrint('LLM analysis failed, using simple analysis');
+          debugPrint('AI analysis failed, using simple analysis');
           _currentAnalysis = _createSimpleAnalysis(sceneText);
-          _error = 'LLM analysis failed, using simple analysis';
+          _error = 'AI analysis failed, using simple analysis';
         }
       } else {
-        // Ollama not available, use simple analysis
-        debugPrint('Ollama not available, using simple analysis');
+        // AI not available, use simple analysis
+        debugPrint('$_currentProvider not available, using simple analysis');
         _currentAnalysis = _createSimpleAnalysis(sceneText);
-        _error = 'Ollama not available - using basic analysis';
+        _error = '$_currentProvider not available - using basic analysis';
       }
     } catch (e) {
       debugPrint('Analysis error: $e');
@@ -66,21 +89,21 @@ class SceneAnalyzerProvider extends ChangeNotifier {
     }
   }
 
-  /// Create simple analysis without LLM
+  /// Create simple analysis without AI
   SceneAnalysis _createSimpleAnalysis(String text) {
     final wordCount = text.trim().isEmpty
         ? 0
         : text.trim().split(RegExp(r'\s+')).length;
 
-    final characters = _ollamaService.extractCharactersSimple(text);
-    final dialoguePercentage = _ollamaService.calculateDialoguePercentage(text);
+    final characters = _aiService?.extractCharactersSimple(text) ?? [];
+    final dialoguePercentage = _aiService?.calculateDialoguePercentage(text) ?? 0;
 
-    debugPrint('Simple analysis created - word count: $wordCount (no echo words - LLM only)');
+    debugPrint('Simple analysis created - word count: $wordCount (no echo words - AI only)');
 
     return SceneAnalysis(
       characters: characters,
       wordCount: wordCount,
-      echoWords: [], // Only use LLM-detected echo words, no fallback
+      echoWords: [], // Only use AI-detected echo words, no fallback
       dialoguePercentage: dialoguePercentage,
       analyzedAt: DateTime.now(),
     );

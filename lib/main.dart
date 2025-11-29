@@ -25,7 +25,17 @@ class FloeApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AppSettingsProvider()),
         ChangeNotifierProvider(create: (_) => DocumentProvider()),
-        ChangeNotifierProvider(create: (_) => SceneAnalyzerProvider()),
+        ChangeNotifierProxyProvider<AppSettingsProvider, SceneAnalyzerProvider>(
+          create: (_) => SceneAnalyzerProvider(),
+          update: (_, settings, analyzer) {
+            analyzer?.updateAiService(
+              settings.aiProvider,
+              apiKey: settings.openAiApiKey,
+              model: settings.openAiModel,
+            );
+            return analyzer ?? SceneAnalyzerProvider();
+          },
+        ),
       ],
       child: Consumer<AppSettingsProvider>(
         builder: (context, settings, _) {
