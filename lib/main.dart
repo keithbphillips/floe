@@ -13,6 +13,9 @@ void main() async {
   // Initialize window manager for fullscreen support
   await windowManager.ensureInitialized();
 
+  // Prevent default window close to handle unsaved changes
+  await windowManager.setPreventClose(true);
+
   runApp(const FloeApp());
 }
 

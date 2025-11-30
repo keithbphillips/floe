@@ -14,6 +14,7 @@ class DocumentProvider extends ChangeNotifier {
   String _content = '';
   String? _filePath;
   bool _hasUnsavedChanges = false;
+  bool _hasExplicitFilePath = false; // Track if user has explicitly saved with a filename
   Timer? _autoSaveTimer;
   int _cursorPosition = 0;
   bool _isSaving = false;
@@ -29,6 +30,7 @@ class DocumentProvider extends ChangeNotifier {
   String get content => _content;
   String? get filePath => _filePath;
   bool get hasUnsavedChanges => _hasUnsavedChanges;
+  bool get hasExplicitFilePath => _hasExplicitFilePath;
   int get cursorPosition => _cursorPosition;
   int get focusStart => _focusStart;
   int get focusEnd => _focusEnd;
@@ -114,6 +116,7 @@ class DocumentProvider extends ChangeNotifier {
 
       _filePath = finalPath;
       _hasUnsavedChanges = false;
+      _hasExplicitFilePath = true; // User explicitly saved the file
 
       // Save this as the last opened file
       await _saveLastFilePath(finalPath);
@@ -139,6 +142,7 @@ class DocumentProvider extends ChangeNotifier {
       _content = content;
       _filePath = path;
       _hasUnsavedChanges = false;
+      _hasExplicitFilePath = true; // Loaded file has an explicit path
       _cursorPosition = 0;
 
       // Save this as the last opened file
@@ -214,6 +218,7 @@ class DocumentProvider extends ChangeNotifier {
       _content = content;
       _filePath = path;
       _hasUnsavedChanges = false;
+      _hasExplicitFilePath = true; // Loaded file has an explicit path
       _cursorPosition = 0;
 
       notifyListeners();
@@ -267,6 +272,7 @@ class DocumentProvider extends ChangeNotifier {
     _content = '';
     _filePath = null;
     _hasUnsavedChanges = false;
+    _hasExplicitFilePath = false; // New document has no explicit path yet
     _cursorPosition = 0;
     _focusStart = 0;
     _focusEnd = 0;

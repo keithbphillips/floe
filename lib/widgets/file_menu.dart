@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:doc_text_extractor/doc_text_extractor.dart';
 import '../providers/document_provider.dart';
 
 class FileMenu extends StatelessWidget {
@@ -174,7 +176,7 @@ class FileMenu extends StatelessWidget {
   Future<void> _openDocument(BuildContext context) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['md', 'txt'],
+      allowedExtensions: ['md', 'txt', 'doc', 'docx'],
       dialogTitle: 'Open Document',
     );
 
@@ -185,12 +187,44 @@ class FileMenu extends StatelessWidget {
 
     try {
       final document = context.read<DocumentProvider>();
-      await document.loadFile(filePath);
+
+      // Check if it's a Word document
+      final extension = filePath.toLowerCase().split('.').last;
+      if (extension == 'doc' || extension == 'docx') {
+        // Show loading indicator for Word documents
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Importing Word document...'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+
+        // Extract text from Word document
+        final extractor = TextExtractor();
+        final extractionResult = await extractor.extractText(filePath, isUrl: false);
+        final text = extractionResult.text;
+
+        if (text.isEmpty) {
+          throw Exception('No text could be extracted from the document');
+        }
+
+        // Load the extracted text as a new document
+        // newDocument() clears the file path, so user will need to "Save As"
+        document.newDocument();
+        document.updateContent(text, 0);
+      } else {
+        // Standard text file loading
+        await document.loadFile(filePath);
+      }
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Opened: ${result.files.first.name}'),
+            content: Text(extension == 'doc' || extension == 'docx'
+                ? 'Imported: ${result.files.first.name} (text only)'
+                : 'Opened: ${result.files.first.name}'),
             duration: const Duration(seconds: 2),
           ),
         );

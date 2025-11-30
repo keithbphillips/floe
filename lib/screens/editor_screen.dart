@@ -21,7 +21,7 @@ class EditorScreen extends StatefulWidget {
   State<EditorScreen> createState() => _EditorScreenState();
 }
 
-class _EditorScreenState extends State<EditorScreen> {
+class _EditorScreenState extends State<EditorScreen> with WindowListener {
   late _SearchableTextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
@@ -40,6 +40,8 @@ class _EditorScreenState extends State<EditorScreen> {
   @override
   void initState() {
     super.initState();
+    windowManager.addListener(this);
+
     final docProvider = context.read<DocumentProvider>();
     final settingsProvider = context.read<AppSettingsProvider>();
 
@@ -114,6 +116,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    windowManager.removeListener(this);
     _cursorUpdateTimer?.cancel();
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
@@ -122,6 +125,112 @@ class _EditorScreenState extends State<EditorScreen> {
     context.read<DocumentProvider>().stopAutoSave();
     super.dispose();
   }
+
+  @override
+  Future<void> onWindowClose() async {
+    final document = context.read<DocumentProvider>();
+
+    // Check if document has content but no explicit file path (auto-saved draft or imported doc)
+    // OR if there are unsaved changes
+    final needsSave = document.content.trim().isNotEmpty &&
+                      (!document.hasExplicitFilePath || document.hasUnsavedChanges);
+
+    if (!needsSave) {
+      // No save needed, disable prevent close and close immediately
+      await windowManager.setPreventClose(false);
+      await windowManager.close();
+      return;
+    }
+
+    // Show save dialog
+    final shouldClose = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save Document'),
+        content: Text(
+          document.hasExplicitFilePath
+              ? 'You have unsaved changes. Do you want to save before exiting?'
+              : 'This document has not been saved with a filename. Do you want to save it before exiting?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Exit Without Saving'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // Save the document
+              if (document.hasExplicitFilePath && document.filePath != null) {
+                // File already has an explicit path, just save
+                await document.autoSave();
+              } else {
+                // Need to show save dialog for new/imported documents
+                final path = await FilePicker.platform.saveFile(
+                  dialogTitle: 'Save Document As',
+                  fileName: 'untitled.md',
+                  type: FileType.custom,
+                  allowedExtensions: ['md'],
+                );
+
+                if (path != null) {
+                  await document.saveAs(path);
+                } else {
+                  // User cancelled save dialog, don't close
+                  Navigator.of(context).pop(false);
+                  return;
+                }
+              }
+              Navigator.of(context).pop(true);
+            },
+            child: const Text('Save and Exit'),
+          ),
+        ],
+      ),
+    );
+
+    // Only close if user confirmed
+    if (shouldClose == true) {
+      await windowManager.setPreventClose(false);
+      await windowManager.close();
+    }
+  }
+
+  @override
+  void onWindowEvent(String eventName) {}
+
+  @override
+  void onWindowFocus() {}
+
+  @override
+  void onWindowBlur() {}
+
+  @override
+  void onWindowMaximize() {}
+
+  @override
+  void onWindowUnmaximize() {}
+
+  @override
+  void onWindowMinimize() {}
+
+  @override
+  void onWindowRestore() {}
+
+  @override
+  void onWindowResize() {}
+
+  @override
+  void onWindowMove() {}
+
+  @override
+  void onWindowEnterFullScreen() {}
+
+  @override
+  void onWindowLeaveFullScreen() {}
 
   void _handleKeyEvent(RawKeyEvent event) {
     if (event is! RawKeyDownEvent) return;

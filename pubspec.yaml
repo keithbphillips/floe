@@ -33,6 +33,9 @@ dependencies:
   # HTTP client for Ollama
   http: ^1.1.0
 
+  # Document import (.doc/.docx)
+  doc_text_extractor: ^2.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
