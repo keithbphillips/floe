@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/app_settings_provider.dart';
 
 class StructureUnit {
   final String type; // 'chapter' or 'scene'
@@ -284,6 +286,7 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final settings = context.watch<AppSettingsProvider>();
     final units = _extractStructure();
 
     if (units.isEmpty) {
@@ -320,8 +323,12 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
           final bubbleSize = minBubbleSize + (sizeRatio * (maxBubbleSize - minBubbleSize));
 
           final bubbleColor = isChapter
-              ? (isDark ? Colors.blue[400]! : Colors.blue[600]!)
-              : (isDark ? Colors.amber[700]! : Colors.amber[600]!);
+              ? (isDark
+                  ? Color(settings.chapterBubbleColorDark)
+                  : Color(settings.chapterBubbleColorLight))
+              : (isDark
+                  ? Color(settings.sceneBubbleColorDark)
+                  : Color(settings.sceneBubbleColorLight));
 
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),

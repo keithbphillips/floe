@@ -9,6 +9,10 @@ class AppSettings {
   final String aiProvider; // 'ollama' or 'openai'
   final String openAiApiKey;
   final String openAiModel;
+  final int chapterBubbleColorLight; // ARGB color value
+  final int chapterBubbleColorDark; // ARGB color value
+  final int sceneBubbleColorLight; // ARGB color value
+  final int sceneBubbleColorDark; // ARGB color value
 
   const AppSettings({
     this.isDarkMode = false,
@@ -21,6 +25,10 @@ class AppSettings {
     this.aiProvider = 'ollama',
     this.openAiApiKey = '',
     this.openAiModel = 'gpt-4o-mini',
+    this.chapterBubbleColorLight = 0xFF1976D2, // Colors.blue[600]
+    this.chapterBubbleColorDark = 0xFF42A5F5, // Colors.blue[400]
+    this.sceneBubbleColorLight = 0xFFFFB300, // Colors.amber[600]
+    this.sceneBubbleColorDark = 0xFFFFA726, // Colors.amber[700]
   });
 
   AppSettings copyWith({
@@ -34,6 +42,10 @@ class AppSettings {
     String? aiProvider,
     String? openAiApiKey,
     String? openAiModel,
+    int? chapterBubbleColorLight,
+    int? chapterBubbleColorDark,
+    int? sceneBubbleColorLight,
+    int? sceneBubbleColorDark,
   }) {
     return AppSettings(
       isDarkMode: isDarkMode ?? this.isDarkMode,
@@ -46,6 +58,10 @@ class AppSettings {
       aiProvider: aiProvider ?? this.aiProvider,
       openAiApiKey: openAiApiKey ?? this.openAiApiKey,
       openAiModel: openAiModel ?? this.openAiModel,
+      chapterBubbleColorLight: chapterBubbleColorLight ?? this.chapterBubbleColorLight,
+      chapterBubbleColorDark: chapterBubbleColorDark ?? this.chapterBubbleColorDark,
+      sceneBubbleColorLight: sceneBubbleColorLight ?? this.sceneBubbleColorLight,
+      sceneBubbleColorDark: sceneBubbleColorDark ?? this.sceneBubbleColorDark,
     );
   }
 
@@ -61,6 +77,10 @@ class AppSettings {
       'aiProvider': aiProvider,
       'openAiApiKey': openAiApiKey,
       'openAiModel': openAiModel,
+      'chapterBubbleColorLight': chapterBubbleColorLight,
+      'chapterBubbleColorDark': chapterBubbleColorDark,
+      'sceneBubbleColorLight': sceneBubbleColorLight,
+      'sceneBubbleColorDark': sceneBubbleColorDark,
     };
   }
 
@@ -76,6 +96,10 @@ class AppSettings {
       aiProvider: json['aiProvider'] ?? 'ollama',
       openAiApiKey: json['openAiApiKey'] ?? '',
       openAiModel: json['openAiModel'] ?? 'gpt-4o-mini',
+      chapterBubbleColorLight: json['chapterBubbleColorLight'] ?? 0xFF1976D2,
+      chapterBubbleColorDark: json['chapterBubbleColorDark'] ?? 0xFF42A5F5,
+      sceneBubbleColorLight: json['sceneBubbleColorLight'] ?? 0xFFFFB300,
+      sceneBubbleColorDark: json['sceneBubbleColorDark'] ?? 0xFFFFA726,
     );
   }
 }

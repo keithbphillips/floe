@@ -21,6 +21,10 @@ class AppSettingsProvider extends ChangeNotifier {
   String get aiProvider => _settings.aiProvider;
   String get openAiApiKey => _settings.openAiApiKey;
   String get openAiModel => _settings.openAiModel;
+  int get chapterBubbleColorLight => _settings.chapterBubbleColorLight;
+  int get chapterBubbleColorDark => _settings.chapterBubbleColorDark;
+  int get sceneBubbleColorLight => _settings.sceneBubbleColorLight;
+  int get sceneBubbleColorDark => _settings.sceneBubbleColorDark;
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -92,6 +96,30 @@ class AppSettingsProvider extends ChangeNotifier {
 
   void setOpenAiModel(String model) {
     _settings = _settings.copyWith(openAiModel: model);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setChapterBubbleColorLight(int color) {
+    _settings = _settings.copyWith(chapterBubbleColorLight: color);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setChapterBubbleColorDark(int color) {
+    _settings = _settings.copyWith(chapterBubbleColorDark: color);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSceneBubbleColorLight(int color) {
+    _settings = _settings.copyWith(sceneBubbleColorLight: color);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setSceneBubbleColorDark(int color) {
+    _settings = _settings.copyWith(sceneBubbleColorDark: color);
     _saveSettings();
     notifyListeners();
   }
