@@ -109,10 +109,10 @@ packages:
     dependency: "direct main"
     description:
       name: doc_text_extractor
-      sha256: "59cb316518e1871aa70b412148e856e957b8ac48caeff9fc851a9eea1706b7ba"
+      sha256: "26ec79a0565b8bc8f1a75cc64fa2028cd5e1c790794e7d12c0cb5ebe0c2cc8a7"
       url: "https://pub.dev"
     source: hosted
-    version: "2.1.0"
+    version: "1.0.0"
   fake_async:
     dependency: transitive
     description:
@@ -577,18 +577,18 @@ packages:
     dependency: transitive
     description:
       name: syncfusion_flutter_core
-      sha256: a55762b7d6fdfe588378127b7b186aad418c04a8670c40d3d3438fa09e3d259a
+      sha256: bee87cdfe527b31705190162e3bd27bf468d591ae7c68182244bdfd94e21f737
       url: "https://pub.dev"
     source: hosted
-    version: "31.2.15"
+    version: "29.2.11"
   syncfusion_flutter_pdf:
     dependency: transitive
     description:
       name: syncfusion_flutter_pdf
-      sha256: ac85ff223e830f3f9d4f799bc5817e1ce6a136d60b3f8dac28bd9d6860db56e0
+      sha256: "08fc998934dab953e980ab3b98482e994beda2e736b88c9fec99cdcf04036509"
       url: "https://pub.dev"
     source: hosted
-    version: "31.2.15"
+    version: "29.2.11"
   term_glyph:
     dependency: transitive
     description:
@@ -679,4 +679,4 @@ packages:
     version: "3.1.3"
 sdks:
   dart: ">=3.8.0 <4.0.0"
-  flutter: ">=3.35.1"
+  flutter: ">=3.24.0"
