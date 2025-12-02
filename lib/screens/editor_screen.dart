@@ -36,6 +36,7 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
   DateTime? _lastAnalysisTime;
   int _currentCursorPosition = 0;
   Timer? _cursorUpdateTimer;
+  Timer? _navigationScrollTimer;
 
   @override
   void initState() {
@@ -694,38 +695,36 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
                       documentContent: document.content,
                       currentCursorPosition: _currentCursorPosition,
                       onNavigate: (position) {
-                        // Navigate to the position
+                        // Cancel any pending scroll adjustment
+                        _navigationScrollTimer?.cancel();
+
+                        // Store current cursor position to detect direction
+                        final currentPosition = _controller.selection.baseOffset;
+                        final movingForward = position > currentPosition;
+
+                        // Set selection and let TextField auto-scroll
                         _controller.selection = TextSelection.collapsed(offset: position);
                         _focusNode.requestFocus();
 
-                        // Scroll to the position
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                        // Wait for TextField to finish auto-scrolling, then adjust
+                        _navigationScrollTimer = Timer(const Duration(milliseconds: 300), () {
                           if (_scrollController.hasClients) {
-                            final text = document.content.substring(0, position);
-                            final lineCount = '\n'.allMatches(text).length;
-
-                            // Get viewport height
+                            final currentScroll = _scrollController.offset;
                             final viewportHeight = _scrollController.position.viewportDimension;
 
-                            // Estimate line height
-                            final theme = Theme.of(context);
-                            final fontSize = theme.textTheme.bodyLarge?.fontSize ?? 18.0;
-                            final lineHeight = fontSize * 1.5;
-
-                            // Calculate position
-                            final targetPosition = lineCount * lineHeight;
-
-                            // Center it vertically in viewport
-                            final scrollTo = (targetPosition - (viewportHeight / 2)).clamp(
-                              0.0,
-                              _scrollController.position.maxScrollExtent
-                            );
-
-                            _scrollController.animateTo(
-                              scrollTo,
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                            );
+                            if (movingForward) {
+                              // TextField positioned cursor at BOTTOM
+                              // Scroll DOWN by ~85% of viewport to move cursor to top
+                              final scrollDownAmount = viewportHeight * 0.85;
+                              final newScroll = (currentScroll + scrollDownAmount).clamp(
+                                0.0,
+                                _scrollController.position.maxScrollExtent
+                              );
+                              _scrollController.jumpTo(newScroll);
+                            } else {
+                              // TextField positioned cursor at TOP - no adjustment needed
+                              // (0% scroll - TextField already positioned it correctly)
+                            }
                           }
                         });
                       },
