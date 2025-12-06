@@ -11,6 +11,7 @@ class SceneAnalysis {
   final List<String> echoWords;
   final List<String> senses;
   final String? stakes;
+  final String? structure;
   final List<String> hunches;
   final DateTime analyzedAt;
 
@@ -25,6 +26,7 @@ class SceneAnalysis {
     this.echoWords = const [],
     this.senses = const [],
     this.stakes,
+    this.structure,
     this.hunches = const [],
     required this.analyzedAt,
   });
@@ -55,6 +57,7 @@ class SceneAnalysis {
       echoWords: processEchoWords(json['echo_words'] as List?),
       senses: (json['senses'] as List?)?.cast<String>() ?? [],
       stakes: json['stakes'] as String?,
+      structure: json['structure'] as String?,
       hunches: (json['hunches'] as List?)?.cast<String>() ?? [],
       analyzedAt: DateTime.now(),
     );
@@ -72,6 +75,7 @@ class SceneAnalysis {
       'echo_words': echoWords,
       'senses': senses,
       'stakes': stakes,
+      'structure': structure,
       'hunches': hunches,
     };
   }

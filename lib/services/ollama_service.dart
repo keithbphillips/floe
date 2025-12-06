@@ -115,6 +115,7 @@ Extract and return JSON with these fields:
   "echo_words": ["words that repeat within close proximity - see instructions below"],
   "senses": ["which senses engaged: sight/sound/touch/taste/smell"],
   "stakes": "brief description of what's at risk",
+  "structure": "evaluate if scene has clear story arc - identify which structural beats are present: inciting incident (what starts the scene), turning point (shift in direction), crisis (key decision point), climax (peak moment), resolution (how it ends). Keep response brief (2-3 sentences max).",
   "hunches": ["2-3 brief suggestions or observations about the scene - things like pacing, clarity, emotional resonance, missing elements, or opportunities"]
 }
 

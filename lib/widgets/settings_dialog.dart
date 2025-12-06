@@ -200,6 +200,102 @@ class SettingsDialog extends StatelessWidget {
                       isDark,
                       context,
                     ),
+
+                    const SizedBox(height: 32),
+                    _buildSectionTitle('Scene Analysis Fields', isDark),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Choose which fields to display in the scene analysis panel',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white38 : Colors.black38,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    _buildCheckboxSetting(
+                      'Characters',
+                      settings.showCharacters,
+                      (value) => settings.toggleShowCharacters(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Setting',
+                      settings.showSetting,
+                      (value) => settings.toggleShowSetting(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Time of Day',
+                      settings.showTimeOfDay,
+                      (value) => settings.toggleShowTimeOfDay(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'POV',
+                      settings.showPov,
+                      (value) => settings.toggleShowPov(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Tone',
+                      settings.showTone,
+                      (value) => settings.toggleShowTone(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Stakes',
+                      settings.showStakes,
+                      (value) => settings.toggleShowStakes(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Structure',
+                      settings.showStructure,
+                      (value) => settings.toggleShowStructure(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Senses',
+                      settings.showSenses,
+                      (value) => settings.toggleShowSenses(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Dialogue Percentage',
+                      settings.showDialoguePercentage,
+                      (value) => settings.toggleShowDialoguePercentage(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Echo Words',
+                      settings.showEchoWords,
+                      (value) => settings.toggleShowEchoWords(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Word Count',
+                      settings.showWordCount,
+                      (value) => settings.toggleShowWordCount(value),
+                      isDark,
+                    ),
+
+                    _buildCheckboxSetting(
+                      'Hunches',
+                      settings.showHunches,
+                      (value) => settings.toggleShowHunches(value),
+                      isDark,
+                    ),
                   ],
                 ),
               ),
@@ -252,6 +348,33 @@ class SettingsDialog extends StatelessWidget {
           activeColor: isDark ? Colors.blueAccent : Colors.blue,
         ),
       ],
+    );
+  }
+
+  Widget _buildCheckboxSetting(String label, bool value, Function(bool) onChanged, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            height: 24,
+            width: 24,
+            child: Checkbox(
+              value: value,
+              onChanged: (newValue) => onChanged(newValue ?? false),
+              activeColor: isDark ? Colors.blueAccent : Colors.blue,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

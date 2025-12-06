@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/scene_analyzer_provider.dart';
 import '../providers/document_provider.dart';
+import '../providers/app_settings_provider.dart';
 import '../models/scene_analysis.dart';
 
 class SceneInfoPanel extends StatefulWidget {
@@ -166,6 +167,7 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
   Widget _buildAnalysisContent(BuildContext context, SceneAnalyzerProvider analyzer, ThemeData theme) {
     final analysis = analyzer.currentAnalysis!;
     final isDark = theme.brightness == Brightness.dark;
+    final settings = context.watch<AppSettingsProvider>();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,7 +219,7 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
           ),
 
         // Characters
-        if (analysis.characters.isNotEmpty)
+        if (settings.showCharacters && analysis.characters.isNotEmpty)
           _buildSection(
             theme,
             isDark,
@@ -226,19 +228,20 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
           ),
 
         // Setting and Time
-        if (analysis.setting != null || analysis.timeOfDay != null)
+        if ((settings.showSetting || settings.showTimeOfDay) &&
+            (analysis.setting != null || analysis.timeOfDay != null))
           _buildSection(
             theme,
             isDark,
             '📍 Setting',
             [
-              analysis.setting,
-              analysis.timeOfDay,
+              if (settings.showSetting) analysis.setting,
+              if (settings.showTimeOfDay) analysis.timeOfDay,
             ].where((e) => e != null).join(', '),
           ),
 
         // POV
-        if (analysis.pov != null)
+        if (settings.showPov && analysis.pov != null)
           _buildSection(
             theme,
             isDark,
@@ -247,7 +250,7 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
           ),
 
         // Tone
-        if (analysis.tone != null)
+        if (settings.showTone && analysis.tone != null)
           _buildSection(
             theme,
             isDark,
@@ -256,7 +259,7 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
           ),
 
         // Stakes
-        if (analysis.stakes != null)
+        if (settings.showStakes && analysis.stakes != null)
           _buildSection(
             theme,
             isDark,
@@ -264,8 +267,17 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
             analysis.stakes!,
           ),
 
+        // Structure
+        if (settings.showStructure && analysis.structure != null)
+          _buildSection(
+            theme,
+            isDark,
+            '🎬 Structure',
+            analysis.structure!,
+          ),
+
         // Senses
-        if (analysis.senses.isNotEmpty)
+        if (settings.showSenses && analysis.senses.isNotEmpty)
           _buildSection(
             theme,
             isDark,
@@ -274,23 +286,24 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
           ),
 
         // Dialogue/Narrative Balance
-        if (analysis.dialoguePercentage != null)
+        if (settings.showDialoguePercentage && analysis.dialoguePercentage != null)
           _buildDialogueBalance(theme, isDark, analysis),
 
         // Echo Words
-        if (analysis.echoWords.isNotEmpty)
+        if (settings.showEchoWords && analysis.echoWords.isNotEmpty)
           _buildEchoWordsSection(context, theme, isDark, analysis.echoWords),
 
         // Word Count and Length Category
-        _buildSection(
-          theme,
-          isDark,
-          '📊 Length',
-          '${analysis.wordCount}w (${analysis.lengthCategory})',
-        ),
+        if (settings.showWordCount)
+          _buildSection(
+            theme,
+            isDark,
+            '📊 Length',
+            '${analysis.wordCount}w (${analysis.lengthCategory})',
+          ),
 
         // Hunches (AI suggestions)
-        if (analysis.hunches.isNotEmpty)
+        if (settings.showHunches && analysis.hunches.isNotEmpty)
           _buildHunchesSection(theme, isDark, analysis.hunches),
 
         // Timestamp

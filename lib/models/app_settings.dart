@@ -13,6 +13,19 @@ class AppSettings {
   final int chapterBubbleColorDark; // ARGB color value
   final int sceneBubbleColorLight; // ARGB color value
   final int sceneBubbleColorDark; // ARGB color value
+  // Analysis field visibility toggles
+  final bool showCharacters;
+  final bool showSetting;
+  final bool showTimeOfDay;
+  final bool showPov;
+  final bool showTone;
+  final bool showStakes;
+  final bool showStructure;
+  final bool showSenses;
+  final bool showDialoguePercentage;
+  final bool showEchoWords;
+  final bool showWordCount;
+  final bool showHunches;
 
   const AppSettings({
     this.isDarkMode = false,
@@ -29,6 +42,19 @@ class AppSettings {
     this.chapterBubbleColorDark = 0xFF42A5F5, // Colors.blue[400]
     this.sceneBubbleColorLight = 0xFFFFB300, // Colors.amber[600]
     this.sceneBubbleColorDark = 0xFFFFA726, // Colors.amber[700]
+    // Default all analysis fields to visible
+    this.showCharacters = true,
+    this.showSetting = true,
+    this.showTimeOfDay = true,
+    this.showPov = true,
+    this.showTone = true,
+    this.showStakes = true,
+    this.showStructure = true,
+    this.showSenses = true,
+    this.showDialoguePercentage = true,
+    this.showEchoWords = true,
+    this.showWordCount = true,
+    this.showHunches = true,
   });
 
   AppSettings copyWith({
@@ -46,6 +72,18 @@ class AppSettings {
     int? chapterBubbleColorDark,
     int? sceneBubbleColorLight,
     int? sceneBubbleColorDark,
+    bool? showCharacters,
+    bool? showSetting,
+    bool? showTimeOfDay,
+    bool? showPov,
+    bool? showTone,
+    bool? showStakes,
+    bool? showStructure,
+    bool? showSenses,
+    bool? showDialoguePercentage,
+    bool? showEchoWords,
+    bool? showWordCount,
+    bool? showHunches,
   }) {
     return AppSettings(
       isDarkMode: isDarkMode ?? this.isDarkMode,
@@ -62,6 +100,18 @@ class AppSettings {
       chapterBubbleColorDark: chapterBubbleColorDark ?? this.chapterBubbleColorDark,
       sceneBubbleColorLight: sceneBubbleColorLight ?? this.sceneBubbleColorLight,
       sceneBubbleColorDark: sceneBubbleColorDark ?? this.sceneBubbleColorDark,
+      showCharacters: showCharacters ?? this.showCharacters,
+      showSetting: showSetting ?? this.showSetting,
+      showTimeOfDay: showTimeOfDay ?? this.showTimeOfDay,
+      showPov: showPov ?? this.showPov,
+      showTone: showTone ?? this.showTone,
+      showStakes: showStakes ?? this.showStakes,
+      showStructure: showStructure ?? this.showStructure,
+      showSenses: showSenses ?? this.showSenses,
+      showDialoguePercentage: showDialoguePercentage ?? this.showDialoguePercentage,
+      showEchoWords: showEchoWords ?? this.showEchoWords,
+      showWordCount: showWordCount ?? this.showWordCount,
+      showHunches: showHunches ?? this.showHunches,
     );
   }
 
@@ -81,6 +131,18 @@ class AppSettings {
       'chapterBubbleColorDark': chapterBubbleColorDark,
       'sceneBubbleColorLight': sceneBubbleColorLight,
       'sceneBubbleColorDark': sceneBubbleColorDark,
+      'showCharacters': showCharacters,
+      'showSetting': showSetting,
+      'showTimeOfDay': showTimeOfDay,
+      'showPov': showPov,
+      'showTone': showTone,
+      'showStakes': showStakes,
+      'showStructure': showStructure,
+      'showSenses': showSenses,
+      'showDialoguePercentage': showDialoguePercentage,
+      'showEchoWords': showEchoWords,
+      'showWordCount': showWordCount,
+      'showHunches': showHunches,
     };
   }
 
@@ -100,6 +162,18 @@ class AppSettings {
       chapterBubbleColorDark: json['chapterBubbleColorDark'] ?? 0xFF42A5F5,
       sceneBubbleColorLight: json['sceneBubbleColorLight'] ?? 0xFFFFB300,
       sceneBubbleColorDark: json['sceneBubbleColorDark'] ?? 0xFFFFA726,
+      showCharacters: json['showCharacters'] ?? true,
+      showSetting: json['showSetting'] ?? true,
+      showTimeOfDay: json['showTimeOfDay'] ?? true,
+      showPov: json['showPov'] ?? true,
+      showTone: json['showTone'] ?? true,
+      showStakes: json['showStakes'] ?? true,
+      showStructure: json['showStructure'] ?? true,
+      showSenses: json['showSenses'] ?? true,
+      showDialoguePercentage: json['showDialoguePercentage'] ?? true,
+      showEchoWords: json['showEchoWords'] ?? true,
+      showWordCount: json['showWordCount'] ?? true,
+      showHunches: json['showHunches'] ?? true,
     );
   }
 }
