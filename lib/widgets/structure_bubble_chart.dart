@@ -24,12 +24,14 @@ class StructureBubbleChart extends StatefulWidget {
   final String documentContent;
   final Function(int) onNavigate;
   final int? currentCursorPosition;
+  final ScrollController? scrollController;
 
   const StructureBubbleChart({
     Key? key,
     required this.documentContent,
     required this.onNavigate,
     this.currentCursorPosition,
+    this.scrollController,
   }) : super(key: key);
 
   @override
@@ -39,12 +41,21 @@ class StructureBubbleChart extends StatefulWidget {
 class _StructureBubbleChartState extends State<StructureBubbleChart> {
   List<StructureUnit>? _cachedUnits;
   String? _lastProcessedContent;
-  final ScrollController _scrollController = ScrollController();
+  ScrollController? _internalScrollController;
+  ScrollController get _scrollController => widget.scrollController ?? _internalScrollController!;
   int? _lastCenteredIndex;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.scrollController == null) {
+      _internalScrollController = ScrollController();
+    }
+  }
+
+  @override
   void dispose() {
-    _scrollController.dispose();
+    _internalScrollController?.dispose();
     super.dispose();
   }
 

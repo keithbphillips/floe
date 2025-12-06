@@ -8,6 +8,7 @@ class ThreadTimelineStrip extends StatefulWidget {
   final int currentSceneIndex;
   final Function(int sceneIndex)? onSceneClick;
   final Function(PlotThread thread)? onThreadClick;
+  final ScrollController? scrollController;
 
   const ThreadTimelineStrip({
     Key? key,
@@ -15,6 +16,7 @@ class ThreadTimelineStrip extends StatefulWidget {
     required this.currentSceneIndex,
     this.onSceneClick,
     this.onThreadClick,
+    this.scrollController,
   }) : super(key: key);
 
   @override
@@ -30,6 +32,25 @@ class _ThreadTimelineStripState extends State<ThreadTimelineStrip> {
   };
 
   bool _isCollapsed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen to bubble scroll to update our offset
+    widget.scrollController?.addListener(_onBubbleScroll);
+  }
+
+  @override
+  void dispose() {
+    widget.scrollController?.removeListener(_onBubbleScroll);
+    super.dispose();
+  }
+
+  void _onBubbleScroll() {
+    if (mounted) {
+      setState(() {}); // Rebuild with new scroll offset
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -224,50 +245,61 @@ class _ThreadTimelineStripState extends State<ThreadTimelineStrip> {
 
   Widget _buildThreadLane(PlotThread thread, ThemeData theme, bool isDark) {
     final typeColor = _getThreadTypeColor(thread.type);
+    final scrollOffset = widget.scrollController?.hasClients == true
+        ? widget.scrollController!.offset
+        : 0.0;
 
     return InkWell(
       onTap: () => widget.onThreadClick?.call(thread),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: SizedBox(
+        height: 24,
         child: Row(
           children: [
-            // Thread label
-            SizedBox(
-              width: 120,
-              child: Row(
-                children: [
-                  Container(
-                    width: 3,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: typeColor,
-                      borderRadius: BorderRadius.circular(1.5),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      thread.title,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                        decoration: thread.status == PlotThreadStatus.resolved
-                            ? TextDecoration.lineThrough
-                            : null,
+            // Thread label (fixed width, doesn't scroll)
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: SizedBox(
+                width: 120,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: typeColor,
+                        borderRadius: BorderRadius.circular(1.5),
                       ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        thread.title,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          decoration: thread.status == PlotThreadStatus.resolved
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
 
             const SizedBox(width: 8),
 
-            // Timeline visualization
+            // Timeline visualization (synced with bubble scroll)
             Expanded(
-              child: _buildThreadTimeline(thread, typeColor, theme, isDark),
+              child: ClipRect(
+                child: Transform.translate(
+                  offset: Offset(-scrollOffset, 0),
+                  child: _buildThreadTimeline(thread, typeColor, theme, isDark),
+                ),
+              ),
             ),
           ],
         ),
@@ -283,67 +315,66 @@ class _ThreadTimelineStripState extends State<ThreadTimelineStrip> {
   ) {
     final maxScene = widget.totalScenes > 0 ? widget.totalScenes : 1;
 
+    // Calculate width based on number of scenes
+    // Each scene needs about 40px (similar to bubble chart spacing)
+    final width = maxScene * 40.0;
+
     return SizedBox(
       height: 20,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
+      width: width,
+      child: Stack(
+        children: [
+          // Background bar (full thread lifecycle)
+          Positioned(
+            left: (thread.introducedAtScene / maxScene) * width,
+            right: width - ((thread.lastMentionedAtScene + 1) / maxScene) * width,
+            top: 8,
+            bottom: 8,
+            child: Container(
+              decoration: BoxDecoration(
+                color: threadColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
 
-          return Stack(
-            children: [
-              // Background bar (full thread lifecycle)
-              Positioned(
-                left: (thread.introducedAtScene / maxScene) * width,
-                right: width - ((thread.lastMentionedAtScene + 1) / maxScene) * width,
-                top: 8,
-                bottom: 8,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: threadColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+          // Scene appearance markers
+          ...thread.sceneAppearances.map((sceneNumber) {
+            final position = (sceneNumber / maxScene) * width;
+            final isCurrentScene = sceneNumber == widget.currentSceneIndex + 1;
+
+            return Positioned(
+              left: position - 3,
+              top: 5,
+              child: Container(
+                width: 6,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: isCurrentScene
+                      ? threadColor
+                      : threadColor.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(3),
+                  border: isCurrentScene
+                      ? Border.all(color: threadColor, width: 1.5)
+                      : null,
                 ),
               ),
+            );
+          }),
 
-              // Scene appearance markers
-              ...thread.sceneAppearances.map((sceneNumber) {
-                final position = (sceneNumber / maxScene) * width;
-                final isCurrentScene = sceneNumber == widget.currentSceneIndex + 1;
-
-                return Positioned(
-                  left: position - 3,
-                  top: 5,
-                  child: Container(
-                    width: 6,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: isCurrentScene
-                          ? threadColor
-                          : threadColor.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(3),
-                      border: isCurrentScene
-                          ? Border.all(color: threadColor, width: 1.5)
-                          : null,
-                    ),
-                  ),
-                );
-              }),
-
-              // Current scene indicator (vertical line)
-              if (widget.totalScenes > 0) ...[
-                Positioned(
-                  left: ((widget.currentSceneIndex + 1) / maxScene) * width - 0.5,
-                  top: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 1,
-                    color: theme.primaryColor.withOpacity(0.3),
-                  ),
-                ),
-              ],
-            ],
-          );
-        },
+          // Current scene indicator (vertical line)
+          if (widget.totalScenes > 0) ...[
+            Positioned(
+              left: ((widget.currentSceneIndex + 1) / maxScene) * width - 0.5,
+              top: 0,
+              bottom: 0,
+              child: Container(
+                width: 1,
+                color: theme.primaryColor.withOpacity(0.3),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

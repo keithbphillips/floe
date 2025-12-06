@@ -29,6 +29,7 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
   final FocusNode _focusNode = FocusNode();
   final FocusNode _keyboardListenerFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _bubbleScrollController = ScrollController(); // Shared between bubbles and timeline
   bool _showWordCount = false;
   bool _showFileMenu = false;
   bool _showFindDialog = false;
@@ -129,6 +130,7 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
     _focusNode.dispose();
     _keyboardListenerFocusNode.dispose();
     _scrollController.dispose();
+    _bubbleScrollController.dispose();
     context.read<DocumentProvider>().stopAutoSave();
     super.dispose();
   }
@@ -701,6 +703,7 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
                     ThreadTimelineStrip(
                       totalScenes: context.watch<PlotThreadProvider>().currentSceneNumber,
                       currentSceneIndex: context.watch<PlotThreadProvider>().currentSceneNumber - 1,
+                      scrollController: _bubbleScrollController,
                       onSceneClick: null, // Could implement scene navigation later
                       onThreadClick: (thread) {
                         // Switch to Plot Threads tab when a thread is clicked
@@ -715,6 +718,7 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
                     StructureBubbleChart(
                       documentContent: document.content,
                       currentCursorPosition: _currentCursorPosition,
+                      scrollController: _bubbleScrollController,
                       onNavigate: (position) {
                         // Cancel any pending scroll adjustment
                         _navigationScrollTimer?.cancel();
