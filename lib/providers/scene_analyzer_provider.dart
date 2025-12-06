@@ -56,6 +56,16 @@ class SceneAnalyzerProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Re-check AI availability before each analysis
+      // This handles cases where Ollama wasn't running at startup
+      if (_aiService != null) {
+        final isNowAvailable = await _aiService!.isAvailable();
+        if (isNowAvailable != _aiAvailable) {
+          debugPrint('AI availability changed: $_aiAvailable -> $isNowAvailable');
+          _aiAvailable = isNowAvailable;
+        }
+      }
+
       if (_aiAvailable && _aiService != null) {
         // Use AI for full analysis
         debugPrint('=== Analyzing scene with $_currentProvider (${sceneText.length} chars) ===');

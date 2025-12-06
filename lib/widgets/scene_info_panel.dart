@@ -175,24 +175,42 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.orange.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(color: Colors.orange.withOpacity(0.3)),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline, size: 16, color: Colors.orange),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      analyzer.error!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.orange,
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.orange),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          analyzer.error!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (analyzer.error!.contains('not available'))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Make sure Ollama is running with llama3.2:3b installed, then use Ctrl+Shift+A to retry analysis.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.orange[700],
+                          fontSize: 11,
+                          height: 1.3,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

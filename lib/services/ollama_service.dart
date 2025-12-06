@@ -17,7 +17,7 @@ class OllamaService implements AiService {
   Future<bool> isAvailable() async {
     try {
       final response = await http.get(Uri.parse(baseUrl)).timeout(
-        const Duration(seconds: 2),
+        const Duration(seconds: 5), // Increased from 2 to 5 seconds
       );
       return response.statusCode == 200;
     } catch (e) {
@@ -54,11 +54,22 @@ class OllamaService implements AiService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final analysisText = data['response'] as String;
-        final parsedResult = _parseAnalysis(analysisText);
+        var parsedResult = _parseAnalysis(analysisText);
 
-        // Ensure word_count is always present
-        if (parsedResult != null && !parsedResult.containsKey('word_count')) {
-          parsedResult['word_count'] = actualWordCount;
+        if (parsedResult != null) {
+          // FIRST: Unwrap raw_response if it exists
+          if (parsedResult.containsKey('raw_response') && parsedResult['raw_response'] is Map) {
+            parsedResult = Map<String, dynamic>.from(parsedResult['raw_response']);
+          }
+
+          // THEN: Ensure word_count is always present
+          if (!parsedResult.containsKey('word_count')) {
+            parsedResult['word_count'] = actualWordCount;
+          }
+
+          // Debug logging
+          debugPrint('Parsed result keys: ${parsedResult.keys}');
+          debugPrint('Echo words in parsed result: ${parsedResult['echo_words']}');
         }
 
         return parsedResult;
