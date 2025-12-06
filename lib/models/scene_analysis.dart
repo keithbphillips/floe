@@ -1,5 +1,38 @@
 import 'package:flutter/foundation.dart';
 
+/// Represents a plot thread detected in a scene
+class PlotThreadMention {
+  final String title;
+  final String description;
+  final String action; // 'introduced', 'advanced', 'resolved'
+  final String type; // 'main_plot', 'subplot', 'character_arc', 'mystery', 'conflict', 'relationship', 'other'
+
+  const PlotThreadMention({
+    required this.title,
+    required this.description,
+    required this.action,
+    required this.type,
+  });
+
+  factory PlotThreadMention.fromJson(Map<String, dynamic> json) {
+    return PlotThreadMention(
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      action: json['action'] ?? 'advanced',
+      type: json['type'] ?? 'other',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'description': description,
+      'action': action,
+      'type': type,
+    };
+  }
+}
+
 class SceneAnalysis {
   final List<String> characters;
   final String? setting;
@@ -13,6 +46,7 @@ class SceneAnalysis {
   final String? stakes;
   final String? structure;
   final List<String> hunches;
+  final List<PlotThreadMention> plotThreads;
   final DateTime analyzedAt;
 
   const SceneAnalysis({
@@ -28,6 +62,7 @@ class SceneAnalysis {
     this.stakes,
     this.structure,
     this.hunches = const [],
+    this.plotThreads = const [],
     required this.analyzedAt,
   });
 
@@ -59,6 +94,10 @@ class SceneAnalysis {
       stakes: json['stakes'] as String?,
       structure: json['structure'] as String?,
       hunches: (json['hunches'] as List?)?.cast<String>() ?? [],
+      plotThreads: (json['plot_threads'] as List?)
+              ?.map((e) => PlotThreadMention.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
       analyzedAt: DateTime.now(),
     );
   }
@@ -77,6 +116,7 @@ class SceneAnalysis {
       'stakes': stakes,
       'structure': structure,
       'hunches': hunches,
+      'plot_threads': plotThreads.map((t) => t.toJson()).toList(),
     };
   }
 

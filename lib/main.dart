@@ -5,6 +5,7 @@ import 'package:window_manager/window_manager.dart';
 import 'providers/app_settings_provider.dart';
 import 'providers/document_provider.dart';
 import 'providers/scene_analyzer_provider.dart';
+import 'providers/plot_thread_provider.dart';
 import 'screens/editor_screen.dart';
 
 void main() async {
@@ -28,6 +29,7 @@ class FloeApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AppSettingsProvider()),
         ChangeNotifierProvider(create: (_) => DocumentProvider()),
+        ChangeNotifierProvider(create: (_) => PlotThreadProvider()),
         ChangeNotifierProxyProvider<AppSettingsProvider, SceneAnalyzerProvider>(
           create: (_) => SceneAnalyzerProvider(),
           update: (_, settings, analyzer) {

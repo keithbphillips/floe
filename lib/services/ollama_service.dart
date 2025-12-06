@@ -116,7 +116,15 @@ Extract and return JSON with these fields:
   "senses": ["which senses engaged: sight/sound/touch/taste/smell"],
   "stakes": "brief description of what's at risk",
   "structure": "evaluate if scene has clear story arc - identify which structural beats are present: inciting incident (what starts the scene), turning point (shift in direction), crisis (key decision point), climax (peak moment), resolution (how it ends). Keep response brief (2-3 sentences max).",
-  "hunches": ["2-3 brief suggestions or observations about the scene - things like pacing, clarity, emotional resonance, missing elements, or opportunities"]
+  "hunches": ["2-3 brief suggestions or observations about the scene - things like pacing, clarity, emotional resonance, missing elements, or opportunities"],
+  "plot_threads": [
+    {
+      "title": "brief title for the plot thread (3-5 words)",
+      "description": "what happens with this thread in this scene (1-2 sentences)",
+      "action": "introduced|advanced|resolved",
+      "type": "main_plot|subplot|character_arc|mystery|conflict|relationship|other"
+    }
+  ]
 }
 
 CRITICAL INSTRUCTIONS:
@@ -139,6 +147,33 @@ CRITICAL INSTRUCTIONS:
 Example: "She walked to the door. The door was locked. She tried the door again." → echo_words: ["door"]
 Example: "He smiled at her. She smiled back. They both smiled." → echo_words: ["smiled"]
 Counter-example: "Martin looked around" (paragraph 1) ... "Martin looked up" (paragraph 5) → NOT an echo (too far apart)
+
+3. plot_threads: Identify ONLY plot threads that appear in THIS scene. A plot thread is a story element that creates forward momentum:
+
+   Action types:
+   - "introduced": This scene starts a new thread (new goal, conflict, question, mystery)
+   - "advanced": This scene develops an existing thread (progress, complication, revelation)
+   - "resolved": This scene concludes a thread (goal achieved, conflict resolved, question answered)
+
+   Thread types:
+   - "main_plot": Primary story arc driving the overall narrative
+   - "subplot": Secondary story arc running parallel to main plot
+   - "character_arc": Character growth, change, or transformation
+   - "mystery": Question raised that needs answering, unknown to be revealed
+   - "conflict": Ongoing tension, opposition, or problem
+   - "relationship": Development of connection between characters
+   - "other": Anything else (worldbuilding, thematic elements, etc.)
+
+   Guidelines:
+   - Identify 1-3 plot threads per scene (most important ones only)
+   - Be specific but concise in titles and descriptions
+   - Focus on threads that create story momentum or need tracking
+   - If a scene is purely transitional with no plot development, return empty array []
+
+   Examples:
+   - Title: "Sarah's Missing Sister", Description: "Sarah discovers her sister hasn't been seen in 3 days", Action: "introduced", Type: "mystery"
+   - Title: "Jack Learns to Trust", Description: "Jack reluctantly accepts help from Maria, beginning to overcome his isolation", Action: "advanced", Type: "character_arc"
+   - Title: "The Artifact Quest", Description: "Heroes finally retrieve the stolen artifact from the temple", Action: "resolved", Type: "main_plot"
 
 Respond with ONLY the JSON object, nothing else.''';
   }

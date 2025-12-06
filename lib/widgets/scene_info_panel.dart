@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/scene_analyzer_provider.dart';
 import '../providers/document_provider.dart';
 import '../providers/app_settings_provider.dart';
+import '../providers/plot_thread_provider.dart';
 import '../models/scene_analysis.dart';
 
 class SceneInfoPanel extends StatefulWidget {
@@ -29,6 +30,9 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
   String? _lastAnalyzedSceneText;
   int? _lastAnalyzedSceneStart;
 
+  // Track last processed analysis to avoid reprocessing
+  SceneAnalysis? _lastProcessedAnalysis;
+
   @override
   Widget build(BuildContext context) {
     final analyzer = context.watch<SceneAnalyzerProvider>();
@@ -44,6 +48,18 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
       if (sceneStart != -1) {
         _lastAnalyzedSceneText = sceneText;
         _lastAnalyzedSceneStart = sceneStart;
+      }
+
+      // Process plot threads if this is a new analysis
+      if (_lastProcessedAnalysis != analyzer.currentAnalysis) {
+        _lastProcessedAnalysis = analyzer.currentAnalysis;
+        final threads = analyzer.currentAnalysis!.plotThreads;
+        if (threads.isNotEmpty) {
+          // Process threads asynchronously to avoid blocking UI
+          Future.microtask(() {
+            context.read<PlotThreadProvider>().processSceneThreads(threads);
+          });
+        }
       }
     }
 

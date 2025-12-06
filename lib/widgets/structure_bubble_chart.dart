@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_settings_provider.dart';
+import '../providers/plot_thread_provider.dart';
+import '../models/plot_thread.dart';
 
 class StructureUnit {
   final String type; // 'chapter' or 'scene'
@@ -305,6 +307,32 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
     return false;
   }
 
+  List<PlotThread> _getThreadsForScene(int sceneNumber) {
+    final threadProvider = context.read<PlotThreadProvider>();
+    return threadProvider.threads
+        .where((thread) => thread.sceneAppearances.contains(sceneNumber))
+        .toList();
+  }
+
+  Color _getThreadTypeColor(PlotThreadType type) {
+    switch (type) {
+      case PlotThreadType.mainPlot:
+        return Colors.blue;
+      case PlotThreadType.subplot:
+        return Colors.purple;
+      case PlotThreadType.characterArc:
+        return Colors.green;
+      case PlotThreadType.mystery:
+        return Colors.deepPurple;
+      case PlotThreadType.conflict:
+        return Colors.red;
+      case PlotThreadType.relationship:
+        return Colors.pink;
+      default:
+        return Colors.grey;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -354,55 +382,86 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
                   ? Color(settings.sceneBubbleColorDark)
                   : Color(settings.sceneBubbleColorLight));
 
+          // Get threads for this scene (only for scenes, not chapters)
+          final sceneThreads = !isChapter && unit.label != null
+              ? _getThreadsForScene(int.tryParse(unit.label!.split('.').last) ?? 0)
+              : <PlotThread>[];
+
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Tooltip(
               message: isChapter
                   ? 'Chapter ${unit.label}\n${unit.wordCount} words'
-                  : 'Scene ${unit.label}\n${unit.wordCount} words',
+                  : 'Scene ${unit.label}\n${unit.wordCount} words${sceneThreads.isNotEmpty ? '\n${sceneThreads.length} plot threads' : ''}',
               child: GestureDetector(
                 onTap: () => widget.onNavigate(unit.startPosition),
-                child: Stack(
-                  alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Highlight circle (outer ring) - only show when selected
-                    if (isSelected)
-                      Container(
-                        width: bubbleSize + 8,
-                        height: bubbleSize + 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isDark ? Colors.blue[300]! : Colors.blue[600]!,
-                            width: 2,
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Highlight circle (outer ring) - only show when selected
+                        if (isSelected)
+                          Container(
+                            width: bubbleSize + 8,
+                            height: bubbleSize + 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isDark ? Colors.blue[300]! : Colors.blue[600]!,
+                                width: 2,
+                              ),
+                            ),
                           ),
+                        // Main bubble
+                        Container(
+                          width: bubbleSize,
+                          height: bubbleSize,
+                          decoration: BoxDecoration(
+                            color: bubbleColor,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isDark ? Colors.white24 : Colors.black12,
+                              width: 1,
+                            ),
+                          ),
+                          child: isChapter
+                              ? Center(
+                                  child: Text(
+                                    unit.label ?? '',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: bubbleSize * 0.35,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                )
+                              : null,
                         ),
-                      ),
-                    // Main bubble
-                    Container(
-                      width: bubbleSize,
-                      height: bubbleSize,
-                      decoration: BoxDecoration(
-                        color: bubbleColor,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isDark ? Colors.white24 : Colors.black12,
-                          width: 1,
-                        ),
-                      ),
-                      child: isChapter
-                          ? Center(
-                              child: Text(
-                                unit.label ?? '',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: bubbleSize * 0.35,
-                                  fontWeight: FontWeight.bold,
+                      ],
+                    ),
+                    // Thread indicator dots below bubble
+                    if (sceneThreads.isNotEmpty && !isChapter)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: sceneThreads.take(3).map((thread) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 0.5),
+                              child: Container(
+                                width: 4,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: _getThreadTypeColor(thread.type),
+                                  shape: BoxShape.circle,
                                 ),
                               ),
-                            )
-                          : null,
-                    ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                   ],
                 ),
               ),

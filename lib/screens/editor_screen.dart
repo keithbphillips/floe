@@ -11,8 +11,11 @@ import '../widgets/settings_dialog.dart';
 import '../widgets/word_count_overlay.dart';
 import '../widgets/file_menu.dart';
 import '../widgets/scene_info_panel.dart';
+import '../widgets/plot_threads_panel.dart';
 import '../widgets/find_dialog.dart';
 import '../widgets/structure_bubble_chart.dart';
+import '../widgets/thread_timeline_strip.dart';
+import '../providers/plot_thread_provider.dart';
 
 class EditorScreen extends StatefulWidget {
   const EditorScreen({Key? key}) : super(key: key);
@@ -38,6 +41,7 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
   int _currentCursorPosition = 0;
   Timer? _cursorUpdateTimer;
   Timer? _navigationScrollTimer;
+  int _rightPanelTabIndex = 0; // 0 = Scene Analysis, 1 = Plot Threads
 
   @override
   void initState() {
@@ -692,6 +696,20 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
             Expanded(
               child: Column(
                 children: [
+                  // Thread timeline strip (above bubble chart)
+                  if (!_isFullscreen)
+                    ThreadTimelineStrip(
+                      totalScenes: context.watch<PlotThreadProvider>().currentSceneNumber,
+                      currentSceneIndex: context.watch<PlotThreadProvider>().currentSceneNumber - 1,
+                      onSceneClick: null, // Could implement scene navigation later
+                      onThreadClick: (thread) {
+                        // Switch to Plot Threads tab when a thread is clicked
+                        setState(() {
+                          _rightPanelTabIndex = 1; // Plot Threads tab
+                        });
+                      },
+                    ),
+
                   // Bubble chart at the top
                   if (!_isFullscreen)
                     StructureBubbleChart(
@@ -912,43 +930,77 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
                     ),
                   ),
                 ),
-                child: SceneInfoPanel(
-                  onClose: () {}, // No close button needed for margin
-                  currentCursorPosition: _controller.selection.baseOffset,
-                  onNavigateToMatch: (start, end) {
-                    // Update text selection to highlight the found echo word
-                    _controller.selection = TextSelection(
-                      baseOffset: start,
-                      extentOffset: end,
-                    );
+                child: Column(
+                  children: [
+                    // Tab Bar
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: theme.brightness == Brightness.dark
+                                ? Colors.grey[800]!
+                                : Colors.grey[300]!,
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          _buildTab('Scene Analysis', 0),
+                          _buildTab('Plot Threads', 1),
+                        ],
+                      ),
+                    ),
+                    // Tab Content
+                    Expanded(
+                      child: IndexedStack(
+                        index: _rightPanelTabIndex,
+                        children: [
+                          // Tab 0: Scene Analysis
+                          SceneInfoPanel(
+                            onClose: () {}, // No close button needed for margin
+                            currentCursorPosition: _controller.selection.baseOffset,
+                            onNavigateToMatch: (start, end) {
+                              // Update text selection to highlight the found echo word
+                              _controller.selection = TextSelection(
+                                baseOffset: start,
+                                extentOffset: end,
+                              );
 
-                    // Give focus to TextField to show selection and trigger scroll
-                    _focusNode.requestFocus();
+                              // Give focus to TextField to show selection and trigger scroll
+                              _focusNode.requestFocus();
 
-                    // Calculate scroll position to center the match vertically
-                    final renderBox = _scrollController.position.context.notificationContext?.findRenderObject() as RenderBox?;
-                    if (renderBox != null) {
-                      // Estimate character position to scroll offset
-                      // This is approximate - a more accurate solution would require measuring actual text layout
-                      final textBeforeMatch = document.content.substring(0, start);
-                      final linesBefore = '\n'.allMatches(textBeforeMatch).length;
-                      final estimatedLineHeight = 24.0; // Approximate line height
-                      final targetOffset = linesBefore * estimatedLineHeight;
+                              // Calculate scroll position to center the match vertically
+                              final renderBox = _scrollController.position.context.notificationContext?.findRenderObject() as RenderBox?;
+                              if (renderBox != null) {
+                                // Estimate character position to scroll offset
+                                // This is approximate - a more accurate solution would require measuring actual text layout
+                                final textBeforeMatch = document.content.substring(0, start);
+                                final linesBefore = '\n'.allMatches(textBeforeMatch).length;
+                                final estimatedLineHeight = 24.0; // Approximate line height
+                                final targetOffset = linesBefore * estimatedLineHeight;
 
-                      // Center the target line in the viewport
-                      final viewportHeight = renderBox.size.height;
-                      final centeredOffset = (targetOffset - viewportHeight / 2).clamp(
-                        _scrollController.position.minScrollExtent,
-                        _scrollController.position.maxScrollExtent,
-                      );
+                                // Center the target line in the viewport
+                                final viewportHeight = renderBox.size.height;
+                                final centeredOffset = (targetOffset - viewportHeight / 2).clamp(
+                                  _scrollController.position.minScrollExtent,
+                                  _scrollController.position.maxScrollExtent,
+                                );
 
-                      _scrollController.animateTo(
-                        centeredOffset,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      );
-                    }
-                  },
+                                _scrollController.animateTo(
+                                  centeredOffset,
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeInOut,
+                                );
+                              }
+                            },
+                          ),
+                          // Tab 1: Plot Threads
+                          const PlotThreadsPanel(),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
           ],
@@ -966,6 +1018,46 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
         textStyle: theme.textTheme.bodyLarge!,
         normalOpacity: settings.focusIntensity,
         focusOpacity: 1.0,
+      ),
+    );
+  }
+
+  Widget _buildTab(String label, int index) {
+    final theme = Theme.of(context);
+    final isSelected = _rightPanelTabIndex == index;
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _rightPanelTabIndex = index;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            border: isSelected
+                ? Border(
+                    bottom: BorderSide(
+                      color: theme.primaryColor,
+                      width: 2,
+                    ),
+                  )
+                : null,
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              color: isSelected
+                  ? theme.primaryColor
+                  : (isDark ? Colors.grey[400] : Colors.grey[600]),
+            ),
+          ),
+        ),
       ),
     );
   }
