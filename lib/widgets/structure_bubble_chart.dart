@@ -282,6 +282,29 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
     );
   }
 
+  /// Determine if this bubble is currently selected based on cursor position
+  bool _isBubbleSelected(StructureUnit unit, List<StructureUnit> allUnits) {
+    if (widget.currentCursorPosition == null) return false;
+
+    // Check if cursor is within this unit's range
+    if (widget.currentCursorPosition! >= unit.startPosition &&
+        widget.currentCursorPosition! < unit.endPosition) {
+      // For scenes, this is sufficient
+      if (unit.type == 'scene') return true;
+
+      // For chapters, only highlight if there are no scenes within it at cursor position
+      // (i.e., prefer highlighting the scene over the chapter)
+      final hasSceneAtCursor = allUnits.any((other) =>
+          other.type == 'scene' &&
+          widget.currentCursorPosition! >= other.startPosition &&
+          widget.currentCursorPosition! < other.endPosition);
+
+      return !hasSceneAtCursor;
+    }
+
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -317,6 +340,7 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
         itemBuilder: (context, index) {
           final unit = units[index];
           final isChapter = unit.type == 'chapter';
+          final isSelected = _isBubbleSelected(unit, units);
 
           // Calculate bubble size based on word count
           final sizeRatio = maxWordCount > 0 ? unit.wordCount / maxWordCount : 0.5;
@@ -338,29 +362,48 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
                   : 'Scene ${unit.label}\n${unit.wordCount} words',
               child: GestureDetector(
                 onTap: () => widget.onNavigate(unit.startPosition),
-                child: Container(
-                  width: bubbleSize,
-                  height: bubbleSize,
-                  decoration: BoxDecoration(
-                    color: bubbleColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isDark ? Colors.white24 : Colors.black12,
-                      width: 1,
-                    ),
-                  ),
-                  child: isChapter
-                      ? Center(
-                          child: Text(
-                            unit.label ?? '',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: bubbleSize * 0.35,
-                              fontWeight: FontWeight.bold,
-                            ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Highlight circle (outer ring) - only show when selected
+                    if (isSelected)
+                      Container(
+                        width: bubbleSize + 8,
+                        height: bubbleSize + 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isDark ? Colors.blue[300]! : Colors.blue[600]!,
+                            width: 2,
                           ),
-                        )
-                      : null,
+                        ),
+                      ),
+                    // Main bubble
+                    Container(
+                      width: bubbleSize,
+                      height: bubbleSize,
+                      decoration: BoxDecoration(
+                        color: bubbleColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isDark ? Colors.white24 : Colors.black12,
+                          width: 1,
+                        ),
+                      ),
+                      child: isChapter
+                          ? Center(
+                              child: Text(
+                                unit.label ?? '',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: bubbleSize * 0.35,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            )
+                          : null,
+                    ),
+                  ],
                 ),
               ),
             ),
