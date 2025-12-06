@@ -336,9 +336,8 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
               message: isChapter
                   ? 'Chapter ${unit.label}\n${unit.wordCount} words'
                   : 'Scene ${unit.label}\n${unit.wordCount} words',
-              child: InkWell(
+              child: GestureDetector(
                 onTap: () => widget.onNavigate(unit.startPosition),
-                borderRadius: BorderRadius.circular(bubbleSize / 2),
                 child: Container(
                   width: bubbleSize,
                   height: bubbleSize,

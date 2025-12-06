@@ -24,6 +24,7 @@ class EditorScreen extends StatefulWidget {
 class _EditorScreenState extends State<EditorScreen> with WindowListener {
   late _SearchableTextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
+  final FocusNode _keyboardListenerFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   bool _showWordCount = false;
   bool _showFileMenu = false;
@@ -122,6 +123,7 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     _focusNode.dispose();
+    _keyboardListenerFocusNode.dispose();
     _scrollController.dispose();
     context.read<DocumentProvider>().stopAutoSave();
     super.dispose();
@@ -680,7 +682,8 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
     final theme = Theme.of(context);
 
     return RawKeyboardListener(
-      focusNode: FocusNode(),
+      focusNode: _keyboardListenerFocusNode,
+      autofocus: true,
       onKey: _handleKeyEvent,
       child: Scaffold(
         body: Row(

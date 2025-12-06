@@ -484,11 +484,10 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: echoWords.map((word) => InkWell(
+              children: echoWords.map((word) => GestureDetector(
                 onTap: widget.onNavigateToMatch != null
                     ? () => _findAndNavigateToEchoWord(context, word)
                     : null,
-                borderRadius: BorderRadius.circular(4),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
