@@ -57,12 +57,20 @@ class OllamaService implements AiService {
         var parsedResult = _parseAnalysis(analysisText);
 
         if (parsedResult != null) {
-          // FIRST: Unwrap raw_response if it exists
+          // Unwrap raw_response if it exists (LLM sometimes wraps the JSON)
           if (parsedResult.containsKey('raw_response') && parsedResult['raw_response'] is Map) {
-            parsedResult = Map<String, dynamic>.from(parsedResult['raw_response']);
+            // Extract the inner data
+            final innerData = Map<String, dynamic>.from(parsedResult['raw_response']);
+            // Preserve any top-level keys that aren't in the inner data
+            parsedResult.forEach((key, value) {
+              if (key != 'raw_response' && !innerData.containsKey(key)) {
+                innerData[key] = value;
+              }
+            });
+            parsedResult = innerData;
           }
 
-          // THEN: Ensure word_count is always present
+          // Ensure word_count is always present
           if (!parsedResult.containsKey('word_count')) {
             parsedResult['word_count'] = actualWordCount;
           }
