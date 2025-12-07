@@ -28,14 +28,14 @@ class OllamaService implements AiService {
 
   /// Analyze a scene using the local LLM
   @override
-  Future<Map<String, dynamic>?> analyzeScene(String sceneText) async {
+  Future<Map<String, dynamic>?> analyzeScene(String sceneText, {List<String>? existingThreads}) async {
     if (sceneText.trim().isEmpty) return null;
 
     // Calculate word count upfront so we can use it as fallback
     final actualWordCount = sceneText.trim().split(RegExp(r'\s+')).length;
 
     try {
-      final prompt = _buildAnalysisPrompt(sceneText);
+      final prompt = _buildAnalysisPrompt(sceneText, existingThreads: existingThreads);
 
       final response = await http.post(
         Uri.parse('$baseUrl/api/generate'),
@@ -46,14 +46,18 @@ class OllamaService implements AiService {
           'stream': false,
           'options': {
             'temperature': 0.3, // Lower for more consistent analysis
-            'num_predict': 500, // Limit response length
+            'num_predict': 1500, // Increased limit for thinking models
           },
         }),
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 90)); // Increased timeout for thinking models
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final analysisText = data['response'] as String;
+
+        // Debug: Print first 500 chars of response to see what we're getting
+        debugPrint('Model response (first 500 chars): ${analysisText.substring(0, analysisText.length > 500 ? 500 : analysisText.length)}');
+
         var parsedResult = _parseAnalysis(analysisText);
 
         if (parsedResult != null) {
@@ -90,13 +94,18 @@ class OllamaService implements AiService {
   }
 
   /// Build the analysis prompt for the LLM
-  String _buildAnalysisPrompt(String sceneText) {
+  String _buildAnalysisPrompt(String sceneText, {List<String>? existingThreads}) {
     // Pre-calculate word count to ensure accuracy
     final actualWordCount = sceneText.trim().isEmpty
         ? 0
         : sceneText.trim().split(RegExp(r'\s+')).length;
 
-    return '''You are an editorial assistant. Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.
+    // Build existing threads context if provided
+    final threadsContext = existingThreads != null && existingThreads.isNotEmpty
+        ? '\n\nEXISTING PLOT THREADS IN THIS DOCUMENT:\n${existingThreads.map((t) => '- $t').join('\n')}\n\nIMPORTANT: When identifying plot threads, use the EXACT title from the existing threads list above if the thread is already being tracked. Only create a new thread if it\'s truly different from existing ones.'
+        : '';
+
+    return '''You are an editorial assistant. Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.$threadsContext
 
 Scene text:
 """
@@ -181,15 +190,42 @@ Respond with ONLY the JSON object, nothing else.''';
   /// Parse the LLM response into structured data
   Map<String, dynamic> _parseAnalysis(String analysisText) {
     try {
-      // Try to extract JSON from the response
-      final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(analysisText);
-      if (jsonMatch != null) {
-        final parsed = json.decode(jsonMatch.group(0)!);
-        return parsed;
+      // Handle empty responses
+      if (analysisText.trim().isEmpty) {
+        debugPrint('Empty analysis response from model');
+        return {'error': 'Empty response from model', 'raw_response': ''};
       }
 
-      // If no JSON found, return the raw text
-      return {'raw_response': analysisText};
+      // Remove markdown code blocks if present (some models wrap JSON in ```json ... ```)
+      String cleanedText = analysisText;
+      if (analysisText.contains('```')) {
+        final codeBlockMatch = RegExp(r'```(?:json)?\s*([\s\S]*?)\s*```').firstMatch(analysisText);
+        if (codeBlockMatch != null) {
+          cleanedText = codeBlockMatch.group(1) ?? analysisText;
+          debugPrint('Extracted JSON from markdown code block');
+        }
+      }
+
+      // Remove any leading/trailing text before the JSON object
+      // Look for the first { and last } to get the complete JSON object
+      final firstBrace = cleanedText.indexOf('{');
+      final lastBrace = cleanedText.lastIndexOf('}');
+
+      if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
+        final jsonText = cleanedText.substring(firstBrace, lastBrace + 1);
+        try {
+          final parsed = json.decode(jsonText);
+          if (parsed is Map<String, dynamic>) {
+            return parsed;
+          }
+        } catch (e) {
+          debugPrint('Failed to parse extracted JSON: $e');
+        }
+      }
+
+      // If no valid JSON found, return the raw text
+      debugPrint('No valid JSON found in response');
+      return {'error': 'No valid JSON in response', 'raw_response': analysisText};
     } catch (e) {
       debugPrint('Failed to parse analysis: $e');
       debugPrint('Analysis text was: $analysisText');

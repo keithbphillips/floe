@@ -7,6 +7,7 @@ class AppSettings {
   final double focusIntensity;
   final int autoSaveInterval; // in seconds
   final String aiProvider; // 'ollama' or 'openai'
+  final String ollamaModel;
   final String openAiApiKey;
   final String openAiModel;
   final int chapterBubbleColorLight; // ARGB color value
@@ -36,6 +37,7 @@ class AppSettings {
     this.focusIntensity = 0.3,
     this.autoSaveInterval = 3,
     this.aiProvider = 'ollama',
+    this.ollamaModel = 'llama3.2:3b',
     this.openAiApiKey = '',
     this.openAiModel = 'gpt-4o-mini',
     this.chapterBubbleColorLight = 0xFF1976D2, // Colors.blue[600]
@@ -66,6 +68,7 @@ class AppSettings {
     double? focusIntensity,
     int? autoSaveInterval,
     String? aiProvider,
+    String? ollamaModel,
     String? openAiApiKey,
     String? openAiModel,
     int? chapterBubbleColorLight,
@@ -94,6 +97,7 @@ class AppSettings {
       focusIntensity: focusIntensity ?? this.focusIntensity,
       autoSaveInterval: autoSaveInterval ?? this.autoSaveInterval,
       aiProvider: aiProvider ?? this.aiProvider,
+      ollamaModel: ollamaModel ?? this.ollamaModel,
       openAiApiKey: openAiApiKey ?? this.openAiApiKey,
       openAiModel: openAiModel ?? this.openAiModel,
       chapterBubbleColorLight: chapterBubbleColorLight ?? this.chapterBubbleColorLight,
@@ -125,6 +129,7 @@ class AppSettings {
       'focusIntensity': focusIntensity,
       'autoSaveInterval': autoSaveInterval,
       'aiProvider': aiProvider,
+      'ollamaModel': ollamaModel,
       'openAiApiKey': openAiApiKey,
       'openAiModel': openAiModel,
       'chapterBubbleColorLight': chapterBubbleColorLight,
@@ -156,6 +161,7 @@ class AppSettings {
       focusIntensity: json['focusIntensity'] ?? 0.3,
       autoSaveInterval: json['autoSaveInterval'] ?? 3,
       aiProvider: json['aiProvider'] ?? 'ollama',
+      ollamaModel: json['ollamaModel'] ?? 'llama3.2:3b',
       openAiApiKey: json['openAiApiKey'] ?? '',
       openAiModel: json['openAiModel'] ?? 'gpt-4o-mini',
       chapterBubbleColorLight: json['chapterBubbleColorLight'] ?? 0xFF1976D2,

@@ -18,16 +18,18 @@ class SceneAnalyzerProvider extends ChangeNotifier {
   }
 
   /// Update the AI service based on settings
-  void updateAiService(String provider, {String? apiKey, String? model}) {
+  void updateAiService(String provider, {String? apiKey, String? openAiModel, String? ollamaModel}) {
     _currentProvider = provider;
 
     if (provider == 'openai') {
       _aiService = OpenAiService(
         apiKey: apiKey ?? '',
-        model: model ?? 'gpt-4o-mini',
+        model: openAiModel ?? 'gpt-4o-mini',
       );
     } else {
-      _aiService = OllamaService();
+      _aiService = OllamaService(
+        model: ollamaModel ?? 'llama3.2:3b',
+      );
     }
 
     _checkAiAvailability();
@@ -48,7 +50,8 @@ class SceneAnalyzerProvider extends ChangeNotifier {
   }
 
   /// Analyze the current scene
-  Future<void> analyzeScene(String sceneText) async {
+  /// [existingPlotThreads] is a list of existing plot thread titles to help AI avoid duplicates
+  Future<void> analyzeScene(String sceneText, {List<String>? existingPlotThreads}) async {
     if (sceneText.trim().isEmpty) return;
 
     _isAnalyzing = true;
@@ -69,7 +72,10 @@ class SceneAnalyzerProvider extends ChangeNotifier {
       if (_aiAvailable && _aiService != null) {
         // Use AI for full analysis
         debugPrint('=== Analyzing scene with $_currentProvider (${sceneText.length} chars) ===');
-        final analysisData = await _aiService!.analyzeScene(sceneText);
+        if (existingPlotThreads != null && existingPlotThreads.isNotEmpty) {
+          debugPrint('Passing ${existingPlotThreads.length} existing plot threads to AI');
+        }
+        final analysisData = await _aiService!.analyzeScene(sceneText, existingThreads: existingPlotThreads);
 
         if (analysisData != null && !analysisData.containsKey('error')) {
           debugPrint('AI analysis data: $analysisData');

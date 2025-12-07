@@ -36,7 +36,8 @@ class FloeApp extends StatelessWidget {
             analyzer?.updateAiService(
               settings.aiProvider,
               apiKey: settings.openAiApiKey,
-              model: settings.openAiModel,
+              openAiModel: settings.openAiModel,
+              ollamaModel: settings.ollamaModel,
             );
             return analyzer ?? SceneAnalyzerProvider();
           },

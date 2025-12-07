@@ -4,7 +4,8 @@ abstract class AiService {
   Future<bool> isAvailable();
 
   /// Analyze a scene using the AI service
-  Future<Map<String, dynamic>?> analyzeScene(String sceneText);
+  /// [existingThreads] is a list of existing plot thread titles to help AI avoid duplicates
+  Future<Map<String, dynamic>?> analyzeScene(String sceneText, {List<String>? existingThreads});
 
   /// Quick character extraction (fallback without AI)
   List<String> extractCharactersSimple(String text);

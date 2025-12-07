@@ -19,6 +19,7 @@ class AppSettingsProvider extends ChangeNotifier {
   double get focusIntensity => _settings.focusIntensity;
   int get autoSaveInterval => _settings.autoSaveInterval;
   String get aiProvider => _settings.aiProvider;
+  String get ollamaModel => _settings.ollamaModel;
   String get openAiApiKey => _settings.openAiApiKey;
   String get openAiModel => _settings.openAiModel;
   int get chapterBubbleColorLight => _settings.chapterBubbleColorLight;
@@ -97,6 +98,12 @@ class AppSettingsProvider extends ChangeNotifier {
 
   void setAiProvider(String provider) {
     _settings = _settings.copyWith(aiProvider: provider);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setOllamaModel(String model) {
+    _settings = _settings.copyWith(ollamaModel: model);
     _saveSettings();
     notifyListeners();
   }

@@ -11,6 +11,12 @@ class PlotThreadProvider extends ChangeNotifier {
   static const String _storageKeyPrefix = 'plot_threads_';
   static const String _sceneNumberKeyPrefix = 'scene_number_';
 
+  // Track processed analysis timestamps to prevent duplicate processing
+  final Set<String> _processedAnalysisIds = {};
+
+  // Counter to ensure unique IDs even when created in the same millisecond
+  int _threadIdCounter = 0;
+
   PlotThreadProvider() {
     // Don't load threads in constructor - wait for document to be set
   }
@@ -94,21 +100,43 @@ class PlotThreadProvider extends ChangeNotifier {
   }
 
   /// Process plot threads from a scene analysis
-  Future<void> processSceneThreads(List<PlotThreadMention> mentions) async {
+  /// [analysisId] is a unique identifier (timestamp) to prevent duplicate processing
+  Future<void> processSceneThreads(List<PlotThreadMention> mentions, {String? analysisId}) async {
+    // Generate analysis ID from mentions if not provided
+    final id = analysisId ?? DateTime.now().toIso8601String();
+
+    // Check if we've already processed this exact analysis
+    if (_processedAnalysisIds.contains(id)) {
+      debugPrint('⚠️  SKIPPING duplicate analysis processing: $id');
+      return;
+    }
+
+    // Mark this analysis as processed
+    _processedAnalysisIds.add(id);
+
     _currentSceneNumber++;
+    debugPrint('=== Processing ${mentions.length} plot thread mentions (Scene #$_currentSceneNumber, ID: $id) ===');
+    debugPrint('Existing threads (${_threads.length}): ${_threads.map((t) => '"${t.title}" (${_normalizeTitle(t.title)})').join(", ")}');
 
     for (final mention in mentions) {
-      // Try to find existing thread with similar title
+      final normalizedMentionTitle = _normalizeTitle(mention.title);
+      debugPrint('Processing mention: "${mention.title}" (normalized: "$normalizedMentionTitle")');
+
+      // Try to find existing thread with matching normalized title
       final existing = _findMatchingThread(mention.title);
 
       if (existing != null) {
+        debugPrint('→ UPDATING existing thread: "${existing.title}"');
         // Update existing thread
         _updateThread(existing, mention);
       } else {
+        debugPrint('→ CREATING new thread: "${mention.title}"');
         // Create new thread
         _createThread(mention);
       }
     }
+
+    debugPrint('After processing, total threads: ${_threads.length}');
 
     // Check for abandoned threads
     _updateAbandonedThreads();
@@ -117,32 +145,68 @@ class PlotThreadProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Find a matching thread by title (fuzzy match)
+  /// Find a matching thread by title
+  /// Uses normalized title as the unique identifier - if titles match after normalization, they're the same thread
   PlotThread? _findMatchingThread(String title) {
-    final titleLower = title.toLowerCase();
+    final titleNormalized = _normalizeTitle(title);
 
-    // First try exact match
+    // Exact match after normalization is the ONLY way to match
+    // This prevents any fuzzy matching confusion
     for (final thread in _threads) {
-      if (thread.title.toLowerCase() == titleLower) {
+      final threadNormalized = _normalizeTitle(thread.title);
+      if (threadNormalized == titleNormalized) {
+        debugPrint('✓ MATCHED: "${thread.title}" == "$title" (normalized: "$threadNormalized")');
         return thread;
       }
     }
 
-    // Then try partial match (for threads with similar names)
-    for (final thread in _threads) {
-      if (thread.title.toLowerCase().contains(titleLower) ||
-          titleLower.contains(thread.title.toLowerCase())) {
-        return thread;
-      }
-    }
-
+    debugPrint('✗ NO MATCH: "$title" (normalized: "$titleNormalized")');
+    debugPrint('  Existing threads: ${_threads.map((t) => _normalizeTitle(t.title)).join(", ")}');
     return null;
+  }
+
+  /// Normalize a title for comparison
+  /// Converts to lowercase, removes possessives, punctuation, extra spaces, and handles singular/plural
+  /// This is the SOLE determinant of whether two threads are the same
+  String _normalizeTitle(String title) {
+    var normalized = title
+        .toLowerCase()                        // Case insensitive
+        .replaceAll("'s", '')                 // Remove possessives (e.g., "Varathon's" -> "Varathon")
+        .replaceAll("'", '')                  // Remove apostrophes
+        .replaceAll(RegExp(r'[^\w\s]'), '')   // Remove all punctuation
+        .replaceAll(RegExp(r'\s+'), ' ')      // Normalize whitespace
+        .trim();
+
+    // Handle common singular/plural variations
+    // Convert common plural forms to singular for matching
+    // This prevents "Mystery" and "Mysteries" or "Phenomenon" and "Phenomena" from being treated as different
+    if (normalized.endsWith('ies')) {
+      // mysteries -> mystery, skies -> sky
+      normalized = normalized.substring(0, normalized.length - 3) + 'y';
+    } else if (normalized.endsWith('phenomena')) {
+      // phenomena -> phenomenon
+      normalized = normalized.substring(0, normalized.length - 8) + 'phenomenon';
+    } else if (normalized.endsWith('ves')) {
+      // wolves -> wolf, lives -> life
+      normalized = normalized.substring(0, normalized.length - 3) + 'f';
+    } else if (normalized.endsWith('ses')) {
+      // crises -> crisis
+      normalized = normalized.substring(0, normalized.length - 2);
+    } else if (normalized.endsWith('s') && !normalized.endsWith('ss')) {
+      // fires -> fire, threads -> thread (but not glass -> glas)
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+
+    return normalized;
   }
 
   /// Create a new thread from a mention
   void _createThread(PlotThreadMention mention) {
+    // Generate unique ID by combining timestamp with counter
+    final uniqueId = '${DateTime.now().millisecondsSinceEpoch}_${_threadIdCounter++}';
+
     final thread = PlotThread(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: uniqueId,
       title: mention.title,
       description: mention.description,
       type: _parseThreadType(mention.type),
@@ -156,7 +220,11 @@ class PlotThreadProvider extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
 
+    debugPrint('   Thread count BEFORE create: ${_threads.length}');
+    debugPrint('   Creating new thread ID: ${thread.id}, title: "${thread.title}"');
     _threads.add(thread);
+    debugPrint('   Thread count AFTER create: ${_threads.length}');
+    debugPrint('   All thread IDs after create: ${_threads.map((t) => '${t.id}:"${t.title}"').join(", ")}');
   }
 
   /// Update an existing thread with new mention
@@ -177,7 +245,15 @@ class PlotThreadProvider extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
 
+    debugPrint('   Thread count BEFORE update: ${_threads.length}');
+    debugPrint('   Updating thread ID: ${existing.id}, title: "${existing.title}"');
+    final oldCount = _threads.length;
     _threads = _threads.map((t) => t.id == existing.id ? updatedThread : t).toList();
+    debugPrint('   Thread count AFTER update: ${_threads.length}');
+    if (_threads.length != oldCount) {
+      debugPrint('   ❌ WARNING: Thread count changed during update! $oldCount → ${_threads.length}');
+    }
+    debugPrint('   All thread IDs after update: ${_threads.map((t) => '${t.id}:"${t.title}"').join(", ")}');
   }
 
   /// Mark threads as abandoned if not mentioned recently

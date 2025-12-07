@@ -36,14 +36,14 @@ class OpenAiService implements AiService {
 
   /// Analyze a scene using OpenAI's API
   @override
-  Future<Map<String, dynamic>?> analyzeScene(String sceneText) async {
+  Future<Map<String, dynamic>?> analyzeScene(String sceneText, {List<String>? existingThreads}) async {
     if (sceneText.trim().isEmpty || apiKey.isEmpty) return null;
 
     // Calculate word count upfront so we can use it as fallback
     final actualWordCount = sceneText.trim().split(RegExp(r'\s+')).length;
 
     try {
-      final prompt = _buildAnalysisPrompt(sceneText);
+      final prompt = _buildAnalysisPrompt(sceneText, existingThreads: existingThreads);
 
       final response = await http.post(
         Uri.parse('$baseUrl/chat/completions'),
@@ -90,13 +90,18 @@ class OpenAiService implements AiService {
   }
 
   /// Build the analysis prompt for the AI
-  String _buildAnalysisPrompt(String sceneText) {
+  String _buildAnalysisPrompt(String sceneText, {List<String>? existingThreads}) {
     // Pre-calculate word count to ensure accuracy
     final actualWordCount = sceneText.trim().isEmpty
         ? 0
         : sceneText.trim().split(RegExp(r'\s+')).length;
 
-    return '''Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.
+    // Build existing threads context if provided
+    final threadsContext = existingThreads != null && existingThreads.isNotEmpty
+        ? '\n\nEXISTING PLOT THREADS IN THIS DOCUMENT:\n${existingThreads.map((t) => '- $t').join('\n')}\n\nIMPORTANT: When identifying plot threads, use the EXACT title from the existing threads list above if the thread is already being tracked. Only create a new thread if it\'s truly different from existing ones.'
+        : '';
+
+    return '''Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.$threadsContext
 
 Scene text:
 """

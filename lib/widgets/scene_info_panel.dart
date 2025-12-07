@@ -30,8 +30,8 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
   String? _lastAnalyzedSceneText;
   int? _lastAnalyzedSceneStart;
 
-  // Track last processed analysis to avoid reprocessing
-  SceneAnalysis? _lastProcessedAnalysis;
+  // Track last processed analysis timestamp to avoid reprocessing
+  DateTime? _lastProcessedAnalysisTime;
 
   @override
   Widget build(BuildContext context) {
@@ -50,14 +50,17 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
         _lastAnalyzedSceneStart = sceneStart;
       }
 
-      // Process plot threads if this is a new analysis
-      if (_lastProcessedAnalysis != analyzer.currentAnalysis) {
-        _lastProcessedAnalysis = analyzer.currentAnalysis;
+      // Process plot threads if this is a new analysis (use timestamp to identify unique analyses)
+      final currentAnalysisTime = analyzer.currentAnalysis!.analyzedAt;
+      if (_lastProcessedAnalysisTime != currentAnalysisTime) {
+        _lastProcessedAnalysisTime = currentAnalysisTime;
         final threads = analyzer.currentAnalysis!.plotThreads;
         if (threads.isNotEmpty) {
+          final analysisId = currentAnalysisTime.toIso8601String();
+          debugPrint('SceneInfoPanel: Processing ${threads.length} threads from analysis at $analysisId');
           // Process threads asynchronously to avoid blocking UI
           Future.microtask(() {
-            context.read<PlotThreadProvider>().processSceneThreads(threads);
+            context.read<PlotThreadProvider>().processSceneThreads(threads, analysisId: analysisId);
           });
         }
       }

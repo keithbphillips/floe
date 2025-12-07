@@ -580,6 +580,7 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
   void _performAnalysis() {
     final document = context.read<DocumentProvider>();
     final analyzer = context.read<SceneAnalyzerProvider>();
+    final plotThreads = context.read<PlotThreadProvider>();
 
     // Extract current scene based on cursor position
     final cursorPosition = _controller.selection.baseOffset;
@@ -595,8 +596,11 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
     debugPrint('Scene preview (first 200 chars): ${sceneText.substring(0, sceneText.length > 200 ? 200 : sceneText.length)}');
 
     if (sceneText.isNotEmpty) {
+      // Get existing plot thread titles to help AI avoid duplicates
+      final existingThreadTitles = plotThreads.threads.map((t) => t.title).toList();
+
       // Start analysis
-      analyzer.analyzeScene(sceneText);
+      analyzer.analyzeScene(sceneText, existingPlotThreads: existingThreadTitles);
 
       // Update tracking variables
       _lastAnalyzedWordCount = document.wordCount;

@@ -125,6 +125,17 @@ class SettingsDialog extends StatelessWidget {
                       isDark,
                     ),
 
+                    if (settings.aiProvider == 'ollama') ...[
+                      const SizedBox(height: 16),
+                      _buildTextFieldSetting(
+                        'Ollama Model',
+                        settings.ollamaModel,
+                        (value) => settings.setOllamaModel(value),
+                        isDark,
+                        helperText: 'e.g., llama3.2:3b, qwen2.5:7b, mistral:latest',
+                      ),
+                    ],
+
                     if (settings.aiProvider == 'openai') ...[
                       const SizedBox(height: 16),
                       _buildTextFieldSetting(
@@ -465,6 +476,7 @@ class SettingsDialog extends StatelessWidget {
     Function(String) onChanged,
     bool isDark, {
     bool obscureText = false,
+    String? helperText,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -490,6 +502,11 @@ class SettingsDialog extends StatelessWidget {
           ),
           decoration: InputDecoration(
             hintText: obscureText ? 'Enter your API key' : 'Enter value',
+            helperText: helperText,
+            helperStyle: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white54 : Colors.black54,
+            ),
             hintStyle: TextStyle(
               color: isDark ? Colors.white38 : Colors.black38,
             ),
