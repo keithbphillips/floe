@@ -8,6 +8,7 @@ An AI-powered writing companion for novelists. Floe provides real-time scene ana
 
 ### 🎭 AI Scene Analysis
 - **Flexible AI providers**: Choose between local Ollama or cloud-based OpenAI
+- **Configurable AI models**: Select specific Ollama or OpenAI models in settings
 - **Automatic scene detection** using standard manuscript formatting (two blank lines)
 - **Real-time analysis** powered by your choice of AI
 - Analyzes:
@@ -18,6 +19,7 @@ An AI-powered writing companion for novelists. Floe provides real-time scene ana
   - Sensory details (sight, sound, touch, taste, smell)
   - Dialogue/narrative balance
   - Echo words (repeated words that may need attention)
+  - Scene structure (inciting incident, turning points, crisis, climax, resolution)
 
 ### 💡 AI Hunches
 - Get intelligent suggestions about:
@@ -27,6 +29,15 @@ An AI-powered writing companion for novelists. Floe provides real-time scene ana
   - Opportunities for improvement
   - Clarity and coherence
 
+### 🧵 Plot Thread Tracking
+- **Automatic detection** of plot threads across your manuscript
+- **Smart categorization**: Main plot, subplots, character arcs, mysteries, conflicts, relationships
+- **Thread lifecycle tracking**: Introduced, developing, resolved, or abandoned
+- **Visual organization**: Grouped by status and type with color-coded indicators
+- **Continuity monitoring**: Identifies potentially abandoned threads
+- **Scene tracking**: See which scenes each thread appears in
+- **Thread matching**: Intelligently matches thread variations across analyses
+
 ### ✍️ Distraction-Free Writing
 - Clean, minimalist interface
 - Focus mode that highlights current sentence
@@ -35,11 +46,21 @@ An AI-powered writing companion for novelists. Floe provides real-time scene ana
 - Word count tracking
 - Auto-save functionality (saves to Documents/Floe)
 
-### 📊 Scene Information Panel
-- Persistent right-margin analysis display
-- Updates automatically as you write
-- Always-visible insights without interrupting flow
-- Hides in fullscreen mode
+### 📊 Visual Story Tracking
+- **Scene Information Panel**: Persistent right-margin analysis display with customizable fields
+- **Bubble Chart Timeline**: Visual representation of your manuscript structure
+  - Chapter and scene navigation
+  - Word count visualization (bubble size)
+  - Dialogue percentage tracking (bubble color)
+  - Click any bubble to jump to that scene
+  - Syncs with cursor position
+  - Timeline strip shows current position
+- **Plot Threads Panel**: Track all story threads in one organized view
+  - Expandable groups by status (active, abandoned, resolved)
+  - Type-based categorization with visual icons
+  - Scene appearance tracking for each thread
+  - One-click thread management (clear all)
+- All panels hide automatically in fullscreen mode
 
 ## Requirements
 
@@ -67,12 +88,15 @@ Download the latest release from the [Releases](https://github.com/keithbphillip
 
 #### Option 1: Ollama (Local AI - Free & Private)
 1. Install [Ollama](https://ollama.ai)
-2. Pull the model:
+2. Pull a model (recommended options):
    ```bash
-   ollama pull llama3.2:3b
+   ollama pull llama3.2:3b      # Fast, 3B parameters (default)
+   ollama pull qwen2.5:3b       # Alternative 3B model
+   ollama pull llama3.2:1b      # Smaller, faster
    ```
 3. Run Ollama (it starts automatically as a service)
 4. Launch Floe - it will automatically detect Ollama
+5. (Optional) Select a different model in Settings → Ollama Model
 
 #### Option 2: OpenAI (Cloud AI - Requires API Key)
 1. Get an API key from [OpenAI](https://platform.openai.com/api-keys)
@@ -111,6 +135,8 @@ flutter build linux --release    # Linux
 - **Ctrl+Shift+A**: Force scene analysis
 - **Ctrl+Shift+F**: Toggle focus mode
 - **Ctrl+Shift+W**: Toggle word count
+- **Ctrl+Shift+B**: Toggle bubble chart
+- **Ctrl+Shift+P**: Toggle plot threads panel
 - **F11**: Toggle fullscreen
 - **Escape**: Close find dialog / Toggle menu bar
 
@@ -129,14 +155,18 @@ Press **Ctrl+Shift+A** to force an immediate analysis.
 
 Access settings with **Ctrl+,** to customize:
 - **AI Provider**: Choose between Ollama (local) or OpenAI (cloud)
-- **OpenAI Settings**: API key and model selection
+- **Ollama Model**: Select from installed models (llama3.2:3b, qwen2.5:3b, etc.)
+- **OpenAI Settings**: API key and model selection (gpt-4o-mini, gpt-4o, etc.)
+- **Scene Info Fields**: Toggle which analysis fields appear in the scene panel
 - **Appearance**: Dark mode, fonts, font size, line height
 - **Focus Mode**: Enable/disable and adjust intensity
 - **Auto-Save**: Interval in seconds
 
 ### AI Models
-- **Ollama**: Uses llama3.2:3b by default (configurable in code)
-- **OpenAI**: Supports gpt-4o-mini, gpt-4o, gpt-4-turbo, gpt-3.5-turbo
+- **Ollama**: Automatically detects installed models, defaults to llama3.2:3b
+  - Recommended: llama3.2:3b, qwen2.5:3b, llama3.2:1b
+  - Works with any Ollama-compatible model
+- **OpenAI**: Supports gpt-4o-mini (recommended), gpt-4o, gpt-4-turbo, gpt-3.5-turbo
 
 ## Privacy
 
@@ -155,6 +185,7 @@ Access settings with **Ctrl+,** to customize:
 ### Data Storage
 - Auto-save files are stored in `Documents/Floe`
 - Settings and API keys are stored locally using system-specific secure storage
+- Plot threads are stored per-document using SharedPreferences
 - No user data is ever included in the git repository or releases
 
 ## Roadmap
@@ -163,12 +194,16 @@ Access settings with **Ctrl+,** to customize:
 - [x] OpenAI API integration
 - [x] Dark mode
 - [x] Focus mode
+- [x] Plot thread tracking
+- [x] Bubble chart visualization
+- [x] Configurable AI models (Ollama & OpenAI)
+- [x] Customizable scene info panel
 - [ ] Export scene analysis reports
-- [ ] Character tracking across chapters
+- [ ] Character tracking across documents
 - [ ] Writing statistics and trends
 - [ ] Custom scene break markers
 - [ ] Project management features
-- [ ] Additional AI provider support (Anthropic, local models)
+- [ ] Additional AI provider support (Anthropic Claude, Google Gemini)
 
 ## Contributing
 
