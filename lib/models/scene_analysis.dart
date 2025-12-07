@@ -81,19 +81,43 @@ class SceneAnalysis {
       return result;
     }
 
+    // Safe string extraction - handles cases where AI returns list instead of string
+    String? extractString(dynamic value) {
+      if (value == null) return null;
+      if (value is String) return value;
+      if (value is List && value.isNotEmpty) {
+        // If AI returned a list, join it or take first element
+        return value.first.toString();
+      }
+      return value.toString();
+    }
+
+    // Safe list extraction - handles cases where AI returns string instead of list
+    List<String> extractStringList(dynamic value) {
+      if (value == null) return [];
+      if (value is List) {
+        return value.map((e) => e.toString()).toList();
+      }
+      if (value is String) {
+        // If AI returned a single string instead of list, wrap it
+        return [value];
+      }
+      return [];
+    }
+
     return SceneAnalysis(
-      characters: (json['characters'] as List?)?.cast<String>() ?? [],
-      setting: json['setting'] as String?,
-      timeOfDay: json['time_of_day'] as String?,
-      pov: json['pov'] as String?,
-      tone: json['tone'] as String?,
+      characters: extractStringList(json['characters']),
+      setting: extractString(json['setting']),
+      timeOfDay: extractString(json['time_of_day']),
+      pov: extractString(json['pov']),
+      tone: extractString(json['tone']),
       dialoguePercentage: json['dialogue_percentage'] as int?,
       wordCount: json['word_count'] as int? ?? 0,
       echoWords: processEchoWords(json['echo_words'] as List?),
-      senses: (json['senses'] as List?)?.cast<String>() ?? [],
-      stakes: json['stakes'] as String?,
-      structure: json['structure'] as String?,
-      hunches: (json['hunches'] as List?)?.cast<String>() ?? [],
+      senses: extractStringList(json['senses']),
+      stakes: extractString(json['stakes']),
+      structure: extractString(json['structure']),
+      hunches: extractStringList(json['hunches']),
       plotThreads: (json['plot_threads'] as List?)
               ?.map((e) => PlotThreadMention.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -136,5 +160,115 @@ class SceneAnalysis {
     if (dialoguePercentage! < 60) return 'Balanced';
     if (dialoguePercentage! < 80) return 'Dialogue-heavy';
     return 'Mostly dialogue';
+  }
+
+  /// Generate JSON Schema for structured outputs
+  /// This schema enforces the exact structure we expect from the LLM
+  static Map<String, dynamic> getJsonSchema() {
+    return {
+      "type": "object",
+      "properties": {
+        "characters": {
+          "type": "array",
+          "description": "List of character names present in the scene",
+          "items": {"type": "string"}
+        },
+        "setting": {
+          "type": "string",
+          "description": "Physical location where the scene takes place"
+        },
+        "time_of_day": {
+          "type": "string",
+          "description": "Time of day: morning, afternoon, evening, night, or unknown"
+        },
+        "pov": {
+          "type": "string",
+          "description": "Point of view character name or 'unknown'"
+        },
+        "tone": {
+          "type": "string",
+          "description": "Brief emotional tone in 1-2 words"
+        },
+        "dialogue_percentage": {
+          "type": "integer",
+          "description": "Estimated percentage of dialogue (0-100)"
+        },
+        "word_count": {
+          "type": "integer",
+          "description": "Total word count of the scene"
+        },
+        "echo_words": {
+          "type": "array",
+          "description": "Words that repeat within close proximity creating unintended rhythmic echo",
+          "items": {"type": "string"}
+        },
+        "senses": {
+          "type": "array",
+          "description": "Which senses are engaged in the scene",
+          "items": {
+            "type": "string",
+            "enum": ["sight", "sound", "touch", "taste", "smell"]
+          }
+        },
+        "stakes": {
+          "type": "string",
+          "description": "Brief description of what is at risk in the scene"
+        },
+        "structure": {
+          "type": "string",
+          "description": "Evaluation of scene structure and story arc (2-3 sentences max)"
+        },
+        "hunches": {
+          "type": "array",
+          "description": "2-3 brief suggestions or observations about the scene",
+          "items": {"type": "string"}
+        },
+        "plot_threads": {
+          "type": "array",
+          "description": "Plot threads that appear in this scene",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "Brief title for the plot thread (3-5 words)"
+              },
+              "description": {
+                "type": "string",
+                "description": "What happens with this thread in this scene (1-2 sentences)"
+              },
+              "action": {
+                "type": "string",
+                "enum": ["introduced", "advanced", "resolved"],
+                "description": "How this thread is affected"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["main_plot", "subplot", "character_arc", "mystery", "conflict", "relationship", "other"],
+                "description": "Type of plot thread"
+              }
+            },
+            "required": ["title", "description", "action", "type"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "characters",
+        "setting",
+        "time_of_day",
+        "pov",
+        "tone",
+        "dialogue_percentage",
+        "word_count",
+        "echo_words",
+        "senses",
+        "stakes",
+        "structure",
+        "hunches",
+        "plot_threads"
+      ],
+      "additionalProperties": false
+    };
   }
 }

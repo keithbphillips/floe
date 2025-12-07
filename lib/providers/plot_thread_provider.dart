@@ -289,6 +289,126 @@ class PlotThreadProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// AI-powered thread consolidation
+  /// Analyzes all threads and removes duplicates/non-threads, merges similar ones
+  Future<Map<String, dynamic>> consolidateThreadsWithAI(dynamic aiService) async {
+    if (_threads.isEmpty) {
+      return {'removed': 0, 'merged': 0, 'kept': _threads.length};
+    }
+
+    debugPrint('=== Starting AI thread consolidation for ${_threads.length} threads ===');
+
+    // Convert threads to simple maps for AI analysis
+    final threadData = _threads.map((t) => {
+      'title': t.title,
+      'description': t.description,
+      'type': t.type.name,
+      'status': t.status.name,
+      'sceneAppearances': t.sceneAppearances,
+    }).toList();
+
+    // Call AI service
+    final result = await aiService.consolidateThreads(threadData);
+    if (result == null) {
+      debugPrint('AI consolidation failed');
+      return {'error': 'AI consolidation failed', 'removed': 0, 'merged': 0, 'kept': _threads.length};
+    }
+
+    int removedCount = 0;
+    int mergedCount = 0;
+    final List<String> toRemove = [];
+    final Map<String, String> mergeMap = {}; // old title -> new title
+
+    // Process AI recommendations
+    final actions = result['actions'] as List<dynamic>?;
+    if (actions == null) {
+      debugPrint('No actions returned from AI');
+      return {'error': 'No actions returned', 'removed': 0, 'merged': 0, 'kept': _threads.length};
+    }
+
+    for (final action in actions) {
+      final threadTitle = action['thread_title'] as String;
+      final actionType = action['action'] as String;
+      final reason = action['reason'] as String;
+
+      debugPrint('Action for "$threadTitle": $actionType - $reason');
+
+      if (actionType == 'remove') {
+        final thread = _threads.where((t) => t.title == threadTitle).firstOrNull;
+        if (thread != null) {
+          toRemove.add(thread.id);
+          removedCount++;
+        }
+      } else if (actionType == 'merge') {
+        final mergeInto = action['merge_into'] as String?;
+        if (mergeInto != null) {
+          mergeMap[threadTitle] = mergeInto;
+          mergedCount++;
+        }
+      }
+    }
+
+    // Remove threads marked for deletion
+    _threads = _threads.where((t) => !toRemove.contains(t.id)).toList();
+
+    // Process merges
+    final Map<String, PlotThread> mergedThreads = {};
+    final List<String> processedTitles = [];
+
+    for (final thread in _threads.toList()) {
+      if (processedTitles.contains(thread.title)) continue;
+
+      // Check if this thread should be merged into another
+      String finalTitle = thread.title;
+      if (mergeMap.containsKey(thread.title)) {
+        finalTitle = mergeMap[thread.title]!;
+      }
+
+      // Find all threads that should merge into this title
+      final threadsToMerge = _threads.where((t) =>
+        t.title == finalTitle || mergeMap[t.title] == finalTitle
+      ).toList();
+
+      if (threadsToMerge.length > 1) {
+        // Merge all appearances
+        final allAppearances = threadsToMerge
+          .expand((t) => t.sceneAppearances)
+          .toSet()
+          .toList()
+          ..sort();
+
+        final latestThread = threadsToMerge.reduce((a, b) =>
+          a.lastMentionedAtScene > b.lastMentionedAtScene ? a : b
+        );
+
+        mergedThreads[finalTitle] = latestThread.copyWith(
+          title: finalTitle,
+          sceneAppearances: allAppearances,
+          lastMentionedAtScene: allAppearances.last,
+          updatedAt: DateTime.now(),
+        );
+
+        processedTitles.addAll(threadsToMerge.map((t) => t.title));
+      } else if (!mergedThreads.containsKey(finalTitle)) {
+        mergedThreads[finalTitle] = thread;
+        processedTitles.add(thread.title);
+      }
+    }
+
+    _threads = mergedThreads.values.toList();
+
+    await _saveThreads();
+    notifyListeners();
+
+    debugPrint('Consolidation complete: removed=$removedCount, merged=$mergedCount, final count=${_threads.length}');
+
+    return {
+      'removed': removedCount,
+      'merged': mergedCount,
+      'kept': _threads.length,
+    };
+  }
+
   /// Manually merge two threads
   Future<void> mergeThreads(String keepId, String removeId) async {
     final keep = _threads.firstWhere((t) => t.id == keepId);

@@ -80,8 +80,16 @@ class SceneAnalyzerProvider extends ChangeNotifier {
         if (analysisData != null && !analysisData.containsKey('error')) {
           debugPrint('AI analysis data: $analysisData');
           debugPrint('Echo words from AI: ${analysisData['echo_words']}');
+          debugPrint('Plot threads from AI (raw): ${analysisData['plot_threads']}');
+          debugPrint('Plot threads count: ${(analysisData['plot_threads'] as List?)?.length ?? 0}');
           _currentAnalysis = SceneAnalysis.fromJson(analysisData);
           debugPrint('After parsing, echo words: ${_currentAnalysis?.echoWords}');
+          debugPrint('After parsing, plot threads: ${_currentAnalysis?.plotThreads.length} threads');
+          if (_currentAnalysis != null && _currentAnalysis!.plotThreads.isNotEmpty) {
+            for (var thread in _currentAnalysis!.plotThreads) {
+              debugPrint('  - "${thread.title}" (${thread.type}): ${thread.action}');
+            }
+          }
           debugPrint('Word count: ${_currentAnalysis?.wordCount}');
         } else {
           // Fallback to simple analysis

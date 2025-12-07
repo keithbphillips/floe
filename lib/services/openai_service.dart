@@ -34,16 +34,19 @@ class OpenAiService implements AiService {
     }
   }
 
-  /// Analyze a scene using OpenAI's API
+  /// Analyze a scene using OpenAI's API with structured outputs
   @override
   Future<Map<String, dynamic>?> analyzeScene(String sceneText, {List<String>? existingThreads}) async {
     if (sceneText.trim().isEmpty || apiKey.isEmpty) return null;
 
-    // Calculate word count upfront so we can use it as fallback
+    // Calculate word count upfront
     final actualWordCount = sceneText.trim().split(RegExp(r'\s+')).length;
 
     try {
-      final prompt = _buildAnalysisPrompt(sceneText, existingThreads: existingThreads);
+      final prompt = _buildAnalysisPrompt(sceneText, actualWordCount, existingThreads: existingThreads);
+
+      // Import the schema from SceneAnalysis model
+      final schema = _getSceneAnalysisSchema();
 
       final response = await http.post(
         Uri.parse('$baseUrl/chat/completions'),
@@ -56,7 +59,7 @@ class OpenAiService implements AiService {
           'messages': [
             {
               'role': 'system',
-              'content': 'You are an editorial assistant that analyzes literary fiction. Respond ONLY with valid JSON, no other text.'
+              'content': 'You are an editorial assistant that analyzes literary fiction scenes.'
             },
             {
               'role': 'user',
@@ -64,20 +67,26 @@ class OpenAiService implements AiService {
             }
           ],
           'temperature': 0.3,
-          'max_tokens': 1000,
+          'max_tokens': 1500,
+          'response_format': {
+            'type': 'json_schema',
+            'json_schema': {
+              'name': 'scene_analysis',
+              'strict': true,
+              'schema': schema,
+            }
+          }
         }),
       ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final analysisText = data['choices'][0]['message']['content'] as String;
-        final parsedResult = _parseAnalysis(analysisText);
 
-        // Ensure word_count is always present
-        if (parsedResult != null && !parsedResult.containsKey('word_count')) {
-          parsedResult['word_count'] = actualWordCount;
-        }
+        // With structured outputs, we can directly parse the JSON
+        final parsedResult = json.decode(analysisText) as Map<String, dynamic>;
 
+        debugPrint('OpenAI structured output received successfully');
         return parsedResult;
       } else {
         debugPrint('OpenAI API error: ${response.statusCode} - ${response.body}');
@@ -89,81 +98,289 @@ class OpenAiService implements AiService {
     return null;
   }
 
-  /// Build the analysis prompt for the AI
-  String _buildAnalysisPrompt(String sceneText, {List<String>? existingThreads}) {
-    // Pre-calculate word count to ensure accuracy
-    final actualWordCount = sceneText.trim().isEmpty
-        ? 0
-        : sceneText.trim().split(RegExp(r'\s+')).length;
-
+  /// Build the analysis prompt for the AI (simplified for structured outputs)
+  String _buildAnalysisPrompt(String sceneText, int actualWordCount, {List<String>? existingThreads}) {
     // Build existing threads context if provided
     final threadsContext = existingThreads != null && existingThreads.isNotEmpty
         ? '\n\nEXISTING PLOT THREADS IN THIS DOCUMENT:\n${existingThreads.map((t) => '- $t').join('\n')}\n\nIMPORTANT: When identifying plot threads, use the EXACT title from the existing threads list above if the thread is already being tracked. Only create a new thread if it\'s truly different from existing ones.'
         : '';
 
-    return '''Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.$threadsContext
+    return '''Analyze this literary fiction scene and extract key information.$threadsContext
 
 Scene text:
 """
 $sceneText
 """
 
-Extract and return JSON with these fields:
-{
-  "characters": ["list of character names present"],
-  "setting": "physical location",
-  "time_of_day": "morning/afternoon/evening/night or unknown",
-  "pov": "whose perspective (character name or unknown)",
-  "tone": "brief emotional tone (1-2 words)",
-  "dialogue_percentage": estimated percentage (0-100),
-  "word_count": $actualWordCount,
-  "echo_words": ["words that repeat within close proximity - see instructions below"],
-  "senses": ["which senses engaged: sight/sound/touch/taste/smell"],
-  "stakes": "brief description of what's at risk",
-  "hunches": ["2-3 brief suggestions or observations about the scene - things like pacing, clarity, emotional resonance, missing elements, or opportunities"]
-}
-
-CRITICAL INSTRUCTIONS:
+ANALYSIS INSTRUCTIONS:
 
 1. word_count: Use EXACTLY $actualWordCount
 
-2. echo_words: Analyze the text for "echo words," meaning any word or short phrase repeated too closely together in a way that creates an unintended rhythmic echo when read aloud.
-
-   CRITICAL: NEVER include these words regardless of repetition: the, a, an, I, you, he, she, it, they, we, his, her, their, my, your, this, that, these, those, and, but, or, of, in, on, at, to, from, for, with, by, was, is, are, had, has, have, been, said, like, will, would, could, should, can, may, might, do, does, did, so, as, if, when, where, who, what, which, how, why, not, no, yes, all, some, any, each, every, both, few, many, more, most, much, such, very, just, now, then, than, there, here
-
-   ONLY include words that meet ALL these criteria:
-   - The SAME word appears 3+ times within the SAME paragraph OR within 2-3 consecutive sentences
-   - The repetition creates an unintended rhythmic echo that would be noticeable when reading aloud
-   - MUST be content words (nouns like "door", "room", "hospital"; verbs like "walked", "smiled", "opened"; adjectives like "heavy", "quiet"; or adverbs like "slowly", "quickly")
-   - NEVER include pronouns, articles, prepositions, conjunctions, or auxiliary verbs
+2. echo_words: Identify "echo words" - words repeated too closely together creating unintended rhythmic echo when read aloud.
+   - NEVER include: the, a, an, I, you, he, she, it, they, we, his, her, their, my, your, this, that, these, those, and, but, or, of, in, on, at, to, from, for, with, by, was, is, are, had, has, have, been, said, like, will, would, could, should, can, may, might, do, does, did, so, as, if, when, where, who, what, which, how, why, not, no, yes, all, some, any, each, every, both, few, many, more, most, much, such, very, just, now, then, than, there, here
+   - ONLY include words appearing 3+ times within the SAME paragraph OR 2-3 consecutive sentences
+   - Must be content words (nouns, verbs, adjectives, adverbs), NOT pronouns, articles, prepositions, conjunctions
    - EXCLUDE character names (they naturally repeat)
-   - Return MAXIMUM 8 echo words, prioritizing the most noticeable repetitions that disrupt the reading flow
-   - If no true echo words exist, return empty array []
+   - Maximum 8 echo words
+   - If no true echo words exist, return empty array
 
-Example: "She walked to the door. The door was locked. She tried the door again." → echo_words: ["door"]
-Example: "He smiled at her. She smiled back. They both smiled." → echo_words: ["smiled"]
-Counter-example: "Martin looked around" (paragraph 1) ... "Martin looked up" (paragraph 5) → NOT an echo (too far apart)
+3. plot_threads: Identify ONLY plot threads in THIS scene
+   - "introduced": New goal, conflict, question, or mystery
+   - "advanced": Progress, complication, or revelation
+   - "resolved": Goal achieved, conflict resolved, question answered
+   - Types: main_plot, subplot, character_arc, mystery, conflict, relationship, other
+   - 1-3 most important threads only
+   - Empty array if purely transitional scene
 
-Respond with ONLY the JSON object, nothing else.''';
+   CRITICAL: Each thread MUST have a UNIQUE, SPECIFIC title that describes THAT PARTICULAR thread.
+   - ✓ GOOD: "Michelle's Childhood Trauma", "Uncle Bill's Warning", "Journey to Vancouver"
+   - ✗ BAD: "Fire in the Home", "Fire in the Home", "Fire in the Home" (same title repeated)
+   - Each thread is a SEPARATE story element and needs its OWN distinct title
+   - If you identify multiple threads, they MUST have DIFFERENT titles
+
+4. structure: Evaluate if scene has clear story arc. Identify which beats are present: inciting incident, turning point, crisis, climax, resolution. Keep brief (2-3 sentences max).
+
+5. hunches: 2-3 brief observations about pacing, clarity, emotional resonance, missing elements, or opportunities.
+
+6. senses: Use only these values: sight, sound, touch, taste, smell''';
   }
 
-  /// Parse the AI response into structured data
-  Map<String, dynamic>? _parseAnalysis(String analysisText) {
-    try {
-      // Try to extract JSON from the response
-      final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(analysisText);
-      if (jsonMatch != null) {
-        final parsed = json.decode(jsonMatch.group(0)!);
-        return parsed;
-      }
+  /// Get the JSON schema for scene analysis
+  /// Uses the schema from SceneAnalysis model
+  Map<String, dynamic> _getSceneAnalysisSchema() {
+    return {
+      "type": "object",
+      "properties": {
+        "characters": {
+          "type": "array",
+          "description": "List of character names present in the scene",
+          "items": {"type": "string"}
+        },
+        "setting": {
+          "type": "string",
+          "description": "Physical location where the scene takes place"
+        },
+        "time_of_day": {
+          "type": "string",
+          "description": "Time of day: morning, afternoon, evening, night, or unknown"
+        },
+        "pov": {
+          "type": "string",
+          "description": "Point of view character name or 'unknown'"
+        },
+        "tone": {
+          "type": "string",
+          "description": "Brief emotional tone in 1-2 words"
+        },
+        "dialogue_percentage": {
+          "type": "integer",
+          "description": "Estimated percentage of dialogue (0-100)"
+        },
+        "word_count": {
+          "type": "integer",
+          "description": "Total word count of the scene"
+        },
+        "echo_words": {
+          "type": "array",
+          "description": "Words that repeat within close proximity creating unintended rhythmic echo",
+          "items": {"type": "string"}
+        },
+        "senses": {
+          "type": "array",
+          "description": "Which senses are engaged in the scene",
+          "items": {
+            "type": "string",
+            "enum": ["sight", "sound", "touch", "taste", "smell"]
+          }
+        },
+        "stakes": {
+          "type": "string",
+          "description": "Brief description of what is at risk in the scene"
+        },
+        "structure": {
+          "type": "string",
+          "description": "Evaluation of scene structure and story arc (2-3 sentences max)"
+        },
+        "hunches": {
+          "type": "array",
+          "description": "2-3 brief suggestions or observations about the scene",
+          "items": {"type": "string"}
+        },
+        "plot_threads": {
+          "type": "array",
+          "description": "Plot threads that appear in this scene",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "Brief title for the plot thread (3-5 words)"
+              },
+              "description": {
+                "type": "string",
+                "description": "What happens with this thread in this scene (1-2 sentences)"
+              },
+              "action": {
+                "type": "string",
+                "enum": ["introduced", "advanced", "resolved"],
+                "description": "How this thread is affected"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["main_plot", "subplot", "character_arc", "mystery", "conflict", "relationship", "other"],
+                "description": "Type of plot thread"
+              }
+            },
+            "required": ["title", "description", "action", "type"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "characters",
+        "setting",
+        "time_of_day",
+        "pov",
+        "tone",
+        "dialogue_percentage",
+        "word_count",
+        "echo_words",
+        "senses",
+        "stakes",
+        "structure",
+        "hunches",
+        "plot_threads"
+      ],
+      "additionalProperties": false
+    };
+  }
 
-      // If no JSON found, return the raw text
-      return {'raw_response': analysisText};
+  /// Consolidate plot threads - analyze all threads and clean up duplicates/non-threads
+  @override
+  Future<Map<String, dynamic>?> consolidateThreads(List<Map<String, dynamic>> threads) async {
+    if (threads.isEmpty || apiKey.isEmpty) return null;
+
+    try {
+      final prompt = _buildConsolidationPrompt(threads);
+      final schema = _getConsolidationSchema();
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: json.encode({
+          'model': model,
+          'messages': [
+            {
+              'role': 'system',
+              'content': 'You are an editorial assistant helping to organize and clean up plot thread tracking.'
+            },
+            {
+              'role': 'user',
+              'content': prompt,
+            }
+          ],
+          'temperature': 0.0,
+          'max_tokens': 2000,
+          'response_format': {
+            'type': 'json_schema',
+            'json_schema': {
+              'name': 'thread_consolidation',
+              'strict': true,
+              'schema': schema,
+            }
+          }
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final analysisText = data['choices'][0]['message']['content'] as String;
+        final parsedResult = json.decode(analysisText) as Map<String, dynamic>;
+
+        debugPrint('OpenAI thread consolidation completed successfully');
+        return parsedResult;
+      } else {
+        debugPrint('OpenAI API error: ${response.statusCode} - ${response.body}');
+      }
     } catch (e) {
-      debugPrint('Failed to parse analysis: $e');
-      debugPrint('Analysis text was: $analysisText');
-      return {'error': 'Failed to parse analysis', 'raw_response': analysisText};
+      debugPrint('Thread consolidation error: $e');
     }
+
+    return null;
+  }
+
+  /// Build the consolidation prompt
+  String _buildConsolidationPrompt(List<Map<String, dynamic>> threads) {
+    final threadsList = threads.map((t) {
+      final title = t['title'] ?? 'Unknown';
+      final type = t['type'] ?? 'unknown';
+      final status = t['status'] ?? 'unknown';
+      final scenes = t['sceneAppearances'] ?? [];
+      final description = t['description'] ?? '';
+      return '- "$title" ($type, $status, appears in ${scenes.length} scenes): $description';
+    }).join('\n');
+
+    return '''Review the following plot threads and determine which should be kept, merged, or removed.
+
+CURRENT PLOT THREADS:
+$threadsList
+
+YOUR TASK:
+Analyze these threads and identify:
+1. REMOVE: Threads that are not actually ongoing plot threads, but just single scene events with no continuation
+2. MERGE: Threads that are actually the same thread but have different titles (provide the best title to use)
+3. KEEP: Legitimate threads that track ongoing story elements
+
+GUIDELINES:
+- A true plot thread appears across multiple scenes and has narrative momentum
+- Single events or descriptions that don't carry forward are NOT threads
+- Threads about the same topic/conflict should be merged (e.g., "Sarah's Quest" + "Sarah Searches for Answers" = same thread)
+- Character arcs that span multiple scenes are legitimate threads
+- Mysteries, conflicts, and relationships that develop over time are legitimate threads
+
+For MERGE actions, choose the most clear and specific title from the duplicates, or create a better one.''';
+  }
+
+  /// Get JSON schema for consolidation response
+  Map<String, dynamic> _getConsolidationSchema() {
+    return {
+      "type": "object",
+      "properties": {
+        "actions": {
+          "type": "array",
+          "description": "List of actions to take on each thread",
+          "items": {
+            "type": "object",
+            "properties": {
+              "thread_title": {
+                "type": "string",
+                "description": "The title of the thread being evaluated"
+              },
+              "action": {
+                "type": "string",
+                "enum": ["keep", "remove", "merge"],
+                "description": "What to do with this thread"
+              },
+              "reason": {
+                "type": "string",
+                "description": "Brief explanation for this action"
+              },
+              "merge_into": {
+                "type": "string",
+                "description": "If action is 'merge', the title to merge into (can be existing or new improved title)"
+              }
+            },
+            "required": ["thread_title", "action", "reason"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["actions"],
+      "additionalProperties": false
+    };
   }
 
   /// Quick character extraction (fallback without AI)

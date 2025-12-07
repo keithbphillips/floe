@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/plot_thread_provider.dart';
+import '../providers/scene_analyzer_provider.dart';
+import '../providers/app_settings_provider.dart';
 import '../models/plot_thread.dart';
+import '../services/openai_service.dart';
+import '../services/ollama_service.dart';
 
 class PlotThreadsPanel extends StatefulWidget {
   const PlotThreadsPanel({Key? key}) : super(key: key);
@@ -62,6 +66,17 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
                 ),
               ),
               const SizedBox(width: 12),
+              // Consolidate threads button (AI cleanup)
+              if (threadProvider.threads.length > 3)
+                IconButton(
+                  icon: const Icon(Icons.auto_fix_high, size: 18),
+                  tooltip: 'AI Consolidation: Remove duplicates and non-threads',
+                  onPressed: () => _showConsolidationDialog(context, threadProvider),
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(),
+                  color: Colors.blue[400],
+                ),
+              const SizedBox(width: 4),
               // Clear all button
               if (threadProvider.threads.isNotEmpty)
                 IconButton(
@@ -495,6 +510,118 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
         ),
       ],
     );
+  }
+
+  Future<void> _showConsolidationDialog(
+    BuildContext context,
+    PlotThreadProvider provider,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.auto_fix_high, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('AI Thread Consolidation'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'The AI will analyze your ${provider.threads.length} plot threads and:',
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 12),
+            const Text('• Remove threads that are just single scene events'),
+            const Text('• Merge duplicate or very similar threads'),
+            const Text('• Keep legitimate ongoing plot threads'),
+            const SizedBox(height: 16),
+            Text(
+              'This helps keep your thread list focused and manageable.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.auto_fix_high, size: 18),
+            label: const Text('Consolidate'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('AI is analyzing threads...'),
+            ],
+          ),
+        ),
+      );
+
+      try {
+        // Get AI service based on current settings
+        final settings = context.read<AppSettingsProvider>();
+        final aiService = settings.aiProvider == 'openai'
+            ? OpenAiService(
+                apiKey: settings.openAiApiKey,
+                model: settings.openAiModel,
+              )
+            : OllamaService(
+                model: settings.ollamaModel,
+              );
+
+        final result = await provider.consolidateThreadsWithAI(aiService);
+
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Close loading dialog
+
+          final removed = result['removed'] ?? 0;
+          final merged = result['merged'] ?? 0;
+          final kept = result['kept'] ?? 0;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Consolidation complete: $removed removed, $merged merged, $kept threads remaining',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Consolidation failed: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _showClearConfirmation(

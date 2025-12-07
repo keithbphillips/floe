@@ -26,16 +26,17 @@ class OllamaService implements AiService {
     }
   }
 
-  /// Analyze a scene using the local LLM
+  /// Analyze a scene using the local LLM with structured outputs
   @override
   Future<Map<String, dynamic>?> analyzeScene(String sceneText, {List<String>? existingThreads}) async {
     if (sceneText.trim().isEmpty) return null;
 
-    // Calculate word count upfront so we can use it as fallback
+    // Calculate word count upfront
     final actualWordCount = sceneText.trim().split(RegExp(r'\s+')).length;
 
     try {
-      final prompt = _buildAnalysisPrompt(sceneText, existingThreads: existingThreads);
+      final prompt = _buildAnalysisPrompt(sceneText, actualWordCount, existingThreads: existingThreads);
+      final schema = _getSceneAnalysisSchema();
 
       final response = await http.post(
         Uri.parse('$baseUrl/api/generate'),
@@ -44,47 +45,31 @@ class OllamaService implements AiService {
           'model': model,
           'prompt': prompt,
           'stream': false,
+          'format': schema, // Ollama structured outputs via JSON schema
           'options': {
-            'temperature': 0.3, // Lower for more consistent analysis
-            'num_predict': 1500, // Increased limit for thinking models
+            'temperature': 0.0, // 0 for deterministic structured output
+            'num_predict': 1500,
           },
         }),
-      ).timeout(const Duration(seconds: 90)); // Increased timeout for thinking models
+      ).timeout(const Duration(seconds: 90));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final analysisText = data['response'] as String;
 
-        // Debug: Print first 500 chars of response to see what we're getting
-        debugPrint('Model response (first 500 chars): ${analysisText.substring(0, analysisText.length > 500 ? 500 : analysisText.length)}');
+        debugPrint('Ollama response length: ${analysisText.length} chars');
 
-        var parsedResult = _parseAnalysis(analysisText);
-
-        if (parsedResult != null) {
-          // Unwrap raw_response if it exists (LLM sometimes wraps the JSON)
-          if (parsedResult.containsKey('raw_response') && parsedResult['raw_response'] is Map) {
-            // Extract the inner data
-            final innerData = Map<String, dynamic>.from(parsedResult['raw_response']);
-            // Preserve any top-level keys that aren't in the inner data
-            parsedResult.forEach((key, value) {
-              if (key != 'raw_response' && !innerData.containsKey(key)) {
-                innerData[key] = value;
-              }
-            });
-            parsedResult = innerData;
-          }
-
-          // Ensure word_count is always present
-          if (!parsedResult.containsKey('word_count')) {
-            parsedResult['word_count'] = actualWordCount;
-          }
-
-          // Debug logging
+        // With structured outputs, Ollama guarantees valid JSON matching schema
+        try {
+          final parsedResult = json.decode(analysisText) as Map<String, dynamic>;
+          debugPrint('Ollama structured output parsed successfully');
           debugPrint('Parsed result keys: ${parsedResult.keys}');
-          debugPrint('Echo words in parsed result: ${parsedResult['echo_words']}');
+          return parsedResult;
+        } catch (e) {
+          debugPrint('Failed to parse Ollama structured output: $e');
+          debugPrint('Response was: $analysisText');
+          return null;
         }
-
-        return parsedResult;
       }
     } catch (e) {
       debugPrint('Scene analysis error: $e');
@@ -93,144 +78,276 @@ class OllamaService implements AiService {
     return null;
   }
 
-  /// Build the analysis prompt for the LLM
-  String _buildAnalysisPrompt(String sceneText, {List<String>? existingThreads}) {
-    // Pre-calculate word count to ensure accuracy
-    final actualWordCount = sceneText.trim().isEmpty
-        ? 0
-        : sceneText.trim().split(RegExp(r'\s+')).length;
-
+  /// Build the analysis prompt for the LLM (simplified for structured outputs)
+  String _buildAnalysisPrompt(String sceneText, int actualWordCount, {List<String>? existingThreads}) {
     // Build existing threads context if provided
     final threadsContext = existingThreads != null && existingThreads.isNotEmpty
         ? '\n\nEXISTING PLOT THREADS IN THIS DOCUMENT:\n${existingThreads.map((t) => '- $t').join('\n')}\n\nIMPORTANT: When identifying plot threads, use the EXACT title from the existing threads list above if the thread is already being tracked. Only create a new thread if it\'s truly different from existing ones.'
         : '';
 
-    return '''You are an editorial assistant. Analyze this literary fiction scene and extract key information. Respond ONLY with valid JSON, no other text.$threadsContext
+    return '''You are an editorial assistant. Analyze this literary fiction scene and extract key information.$threadsContext
 
 Scene text:
 """
 $sceneText
 """
 
-Extract and return JSON with these fields:
-{
-  "characters": ["list of character names present"],
-  "setting": "physical location",
-  "time_of_day": "morning/afternoon/evening/night or unknown",
-  "pov": "whose perspective (character name or unknown)",
-  "tone": "brief emotional tone (1-2 words)",
-  "dialogue_percentage": estimated percentage (0-100),
-  "word_count": $actualWordCount,
-  "echo_words": ["words that repeat within close proximity - see instructions below"],
-  "senses": ["which senses engaged: sight/sound/touch/taste/smell"],
-  "stakes": "brief description of what's at risk",
-  "structure": "evaluate if scene has clear story arc - identify which structural beats are present: inciting incident (what starts the scene), turning point (shift in direction), crisis (key decision point), climax (peak moment), resolution (how it ends). Keep response brief (2-3 sentences max).",
-  "hunches": ["2-3 brief suggestions or observations about the scene - things like pacing, clarity, emotional resonance, missing elements, or opportunities"],
-  "plot_threads": [
-    {
-      "title": "brief title for the plot thread (3-5 words)",
-      "description": "what happens with this thread in this scene (1-2 sentences)",
-      "action": "introduced|advanced|resolved",
-      "type": "main_plot|subplot|character_arc|mystery|conflict|relationship|other"
-    }
-  ]
-}
-
-CRITICAL INSTRUCTIONS:
+ANALYSIS INSTRUCTIONS:
 
 1. word_count: Use EXACTLY $actualWordCount
 
-2. echo_words: Analyze the text for "echo words," meaning any word or short phrase repeated too closely together in a way that creates an unintended rhythmic echo when read aloud.
-
-   CRITICAL: NEVER include these words regardless of repetition: the, a, an, I, you, he, she, it, they, we, his, her, their, my, your, this, that, these, those, and, but, or, of, in, on, at, to, from, for, with, by, was, is, are, had, has, have, been, said, like, will, would, could, should, can, may, might, do, does, did, so, as, if, when, where, who, what, which, how, why, not, no, yes, all, some, any, each, every, both, few, many, more, most, much, such, very, just, now, then, than, there, here
-
-   ONLY include words that meet ALL these criteria:
-   - The SAME word appears 3+ times within the SAME paragraph OR within 2-3 consecutive sentences
-   - The repetition creates an unintended rhythmic echo that would be noticeable when reading aloud
-   - MUST be content words (nouns like "door", "room", "hospital"; verbs like "walked", "smiled", "opened"; adjectives like "heavy", "quiet"; or adverbs like "slowly", "quickly")
-   - NEVER include pronouns, articles, prepositions, conjunctions, or auxiliary verbs
+2. echo_words: Identify "echo words" - words repeated too closely together creating unintended rhythmic echo when read aloud.
+   - NEVER include: the, a, an, I, you, he, she, it, they, we, his, her, their, my, your, this, that, these, those, and, but, or, of, in, on, at, to, from, for, with, by, was, is, are, had, has, have, been, said, like, will, would, could, should, can, may, might, do, does, did, so, as, if, when, where, who, what, which, how, why, not, no, yes, all, some, any, each, every, both, few, many, more, most, much, such, very, just, now, then, than, there, here
+   - ONLY include words appearing 3+ times within the SAME paragraph OR 2-3 consecutive sentences
+   - Must be content words (nouns, verbs, adjectives, adverbs), NOT pronouns, articles, prepositions, conjunctions
    - EXCLUDE character names (they naturally repeat)
-   - Return MAXIMUM 8 echo words, prioritizing the most noticeable repetitions that disrupt the reading flow
-   - If no true echo words exist, return empty array []
+   - Maximum 8 echo words
+   - If no true echo words exist, return empty array
 
-Example: "She walked to the door. The door was locked. She tried the door again." → echo_words: ["door"]
-Example: "He smiled at her. She smiled back. They both smiled." → echo_words: ["smiled"]
-Counter-example: "Martin looked around" (paragraph 1) ... "Martin looked up" (paragraph 5) → NOT an echo (too far apart)
+3. plot_threads: Identify ONLY plot threads in THIS scene
+   - "introduced": New goal, conflict, question, or mystery
+   - "advanced": Progress, complication, or revelation
+   - "resolved": Goal achieved, conflict resolved, question answered
+   - Types: main_plot, subplot, character_arc, mystery, conflict, relationship, other
+   - 1-3 most important threads only
+   - Empty array if purely transitional scene
 
-3. plot_threads: Identify ONLY plot threads that appear in THIS scene. A plot thread is a story element that creates forward momentum:
+   CRITICAL: Each thread MUST have a UNIQUE, SPECIFIC title that describes THAT PARTICULAR thread.
+   - ✓ GOOD: "Michelle's Childhood Trauma", "Uncle Bill's Warning", "Journey to Vancouver"
+   - ✗ BAD: "Fire in the Home", "Fire in the Home", "Fire in the Home" (same title repeated)
+   - Each thread is a SEPARATE story element and needs its OWN distinct title
+   - If you identify multiple threads, they MUST have DIFFERENT titles
 
-   Action types:
-   - "introduced": This scene starts a new thread (new goal, conflict, question, mystery)
-   - "advanced": This scene develops an existing thread (progress, complication, revelation)
-   - "resolved": This scene concludes a thread (goal achieved, conflict resolved, question answered)
+4. structure: Evaluate if scene has clear story arc. Identify which beats are present: inciting incident, turning point, crisis, climax, resolution. Keep brief (2-3 sentences max).
 
-   Thread types:
-   - "main_plot": Primary story arc driving the overall narrative
-   - "subplot": Secondary story arc running parallel to main plot
-   - "character_arc": Character growth, change, or transformation
-   - "mystery": Question raised that needs answering, unknown to be revealed
-   - "conflict": Ongoing tension, opposition, or problem
-   - "relationship": Development of connection between characters
-   - "other": Anything else (worldbuilding, thematic elements, etc.)
+5. hunches: 2-3 brief observations about pacing, clarity, emotional resonance, missing elements, or opportunities.
 
-   Guidelines:
-   - Identify 1-3 plot threads per scene (most important ones only)
-   - Be specific but concise in titles and descriptions
-   - Focus on threads that create story momentum or need tracking
-   - If a scene is purely transitional with no plot development, return empty array []
-
-   Examples:
-   - Title: "Sarah's Missing Sister", Description: "Sarah discovers her sister hasn't been seen in 3 days", Action: "introduced", Type: "mystery"
-   - Title: "Jack Learns to Trust", Description: "Jack reluctantly accepts help from Maria, beginning to overcome his isolation", Action: "advanced", Type: "character_arc"
-   - Title: "The Artifact Quest", Description: "Heroes finally retrieve the stolen artifact from the temple", Action: "resolved", Type: "main_plot"
-
-Respond with ONLY the JSON object, nothing else.''';
+6. senses: Use only these values: sight, sound, touch, taste, smell''';
   }
 
-  /// Parse the LLM response into structured data
-  Map<String, dynamic> _parseAnalysis(String analysisText) {
-    try {
-      // Handle empty responses
-      if (analysisText.trim().isEmpty) {
-        debugPrint('Empty analysis response from model');
-        return {'error': 'Empty response from model', 'raw_response': ''};
-      }
-
-      // Remove markdown code blocks if present (some models wrap JSON in ```json ... ```)
-      String cleanedText = analysisText;
-      if (analysisText.contains('```')) {
-        final codeBlockMatch = RegExp(r'```(?:json)?\s*([\s\S]*?)\s*```').firstMatch(analysisText);
-        if (codeBlockMatch != null) {
-          cleanedText = codeBlockMatch.group(1) ?? analysisText;
-          debugPrint('Extracted JSON from markdown code block');
-        }
-      }
-
-      // Remove any leading/trailing text before the JSON object
-      // Look for the first { and last } to get the complete JSON object
-      final firstBrace = cleanedText.indexOf('{');
-      final lastBrace = cleanedText.lastIndexOf('}');
-
-      if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
-        final jsonText = cleanedText.substring(firstBrace, lastBrace + 1);
-        try {
-          final parsed = json.decode(jsonText);
-          if (parsed is Map<String, dynamic>) {
-            return parsed;
+  /// Get the JSON schema for scene analysis
+  /// Ollama uses this schema to constrain output format
+  Map<String, dynamic> _getSceneAnalysisSchema() {
+    return {
+      "type": "object",
+      "properties": {
+        "characters": {
+          "type": "array",
+          "description": "List of character names present in the scene",
+          "items": {"type": "string"}
+        },
+        "setting": {
+          "type": "string",
+          "description": "Physical location where the scene takes place"
+        },
+        "time_of_day": {
+          "type": "string",
+          "description": "Time of day: morning, afternoon, evening, night, or unknown"
+        },
+        "pov": {
+          "type": "string",
+          "description": "Point of view character name or 'unknown'"
+        },
+        "tone": {
+          "type": "string",
+          "description": "Brief emotional tone in 1-2 words"
+        },
+        "dialogue_percentage": {
+          "type": "integer",
+          "description": "Estimated percentage of dialogue (0-100)"
+        },
+        "word_count": {
+          "type": "integer",
+          "description": "Total word count of the scene"
+        },
+        "echo_words": {
+          "type": "array",
+          "description": "Words that repeat within close proximity creating unintended rhythmic echo",
+          "items": {"type": "string"}
+        },
+        "senses": {
+          "type": "array",
+          "description": "Which senses are engaged in the scene",
+          "items": {
+            "type": "string",
+            "enum": ["sight", "sound", "touch", "taste", "smell"]
           }
+        },
+        "stakes": {
+          "type": "string",
+          "description": "Brief description of what is at risk in the scene"
+        },
+        "structure": {
+          "type": "string",
+          "description": "Evaluation of scene structure and story arc (2-3 sentences max)"
+        },
+        "hunches": {
+          "type": "array",
+          "description": "2-3 brief suggestions or observations about the scene",
+          "items": {"type": "string"}
+        },
+        "plot_threads": {
+          "type": "array",
+          "description": "Plot threads that appear in this scene",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "Brief title for the plot thread (3-5 words)"
+              },
+              "description": {
+                "type": "string",
+                "description": "What happens with this thread in this scene (1-2 sentences)"
+              },
+              "action": {
+                "type": "string",
+                "enum": ["introduced", "advanced", "resolved"],
+                "description": "How this thread is affected"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["main_plot", "subplot", "character_arc", "mystery", "conflict", "relationship", "other"],
+                "description": "Type of plot thread"
+              }
+            },
+            "required": ["title", "description", "action", "type"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "characters",
+        "setting",
+        "time_of_day",
+        "pov",
+        "tone",
+        "dialogue_percentage",
+        "word_count",
+        "echo_words",
+        "senses",
+        "stakes",
+        "structure",
+        "hunches",
+        "plot_threads"
+      ],
+      "additionalProperties": false
+    };
+  }
+
+  /// Consolidate plot threads - analyze all threads and clean up duplicates/non-threads
+  @override
+  Future<Map<String, dynamic>?> consolidateThreads(List<Map<String, dynamic>> threads) async {
+    if (threads.isEmpty) return null;
+
+    try {
+      final prompt = _buildConsolidationPrompt(threads);
+      final schema = _getConsolidationSchema();
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/generate'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'model': model,
+          'prompt': prompt,
+          'stream': false,
+          'format': schema,
+          'options': {
+            'temperature': 0.0,
+            'num_predict': 2000,
+          },
+        }),
+      ).timeout(const Duration(seconds: 120));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final analysisText = data['response'] as String;
+
+        try {
+          final parsedResult = json.decode(analysisText) as Map<String, dynamic>;
+          debugPrint('Ollama thread consolidation completed successfully');
+          return parsedResult;
         } catch (e) {
-          debugPrint('Failed to parse extracted JSON: $e');
+          debugPrint('Failed to parse Ollama consolidation output: $e');
+          return null;
         }
       }
-
-      // If no valid JSON found, return the raw text
-      debugPrint('No valid JSON found in response');
-      return {'error': 'No valid JSON in response', 'raw_response': analysisText};
     } catch (e) {
-      debugPrint('Failed to parse analysis: $e');
-      debugPrint('Analysis text was: $analysisText');
-      return {'error': 'Failed to parse analysis', 'raw_response': analysisText};
+      debugPrint('Thread consolidation error: $e');
     }
+
+    return null;
+  }
+
+  /// Build the consolidation prompt
+  String _buildConsolidationPrompt(List<Map<String, dynamic>> threads) {
+    final threadsList = threads.map((t) {
+      final title = t['title'] ?? 'Unknown';
+      final type = t['type'] ?? 'unknown';
+      final status = t['status'] ?? 'unknown';
+      final scenes = t['sceneAppearances'] ?? [];
+      final description = t['description'] ?? '';
+      return '- "$title" ($type, $status, appears in ${scenes.length} scenes): $description';
+    }).join('\n');
+
+    return '''You are an editorial assistant helping to clean up plot thread tracking. Review the following plot threads and determine which should be kept, merged, or removed.
+
+CURRENT PLOT THREADS:
+$threadsList
+
+YOUR TASK:
+Analyze these threads and identify:
+1. REMOVE: Threads that are not actually ongoing plot threads, but just single scene events with no continuation
+2. MERGE: Threads that are actually the same thread but have different titles (provide the best title to use)
+3. KEEP: Legitimate threads that track ongoing story elements
+
+GUIDELINES:
+- A true plot thread appears across multiple scenes and has narrative momentum
+- Single events or descriptions that don't carry forward are NOT threads
+- Threads about the same topic/conflict should be merged (e.g., "Sarah's Quest" + "Sarah Searches for Answers" = same thread)
+- Character arcs that span multiple scenes are legitimate threads
+- Mysteries, conflicts, and relationships that develop over time are legitimate threads
+
+For MERGE actions, choose the most clear and specific title from the duplicates, or create a better one.''';
+  }
+
+  /// Get JSON schema for consolidation response
+  Map<String, dynamic> _getConsolidationSchema() {
+    return {
+      "type": "object",
+      "properties": {
+        "actions": {
+          "type": "array",
+          "description": "List of actions to take on each thread",
+          "items": {
+            "type": "object",
+            "properties": {
+              "thread_title": {
+                "type": "string",
+                "description": "The title of the thread being evaluated"
+              },
+              "action": {
+                "type": "string",
+                "enum": ["keep", "remove", "merge"],
+                "description": "What to do with this thread"
+              },
+              "reason": {
+                "type": "string",
+                "description": "Brief explanation for this action"
+              },
+              "merge_into": {
+                "type": "string",
+                "description": "If action is 'merge', the title to merge into (can be existing or new improved title)"
+              }
+            },
+            "required": ["thread_title", "action", "reason"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["actions"],
+      "additionalProperties": false
+    };
   }
 
   /// Quick character extraction (fallback without LLM)
