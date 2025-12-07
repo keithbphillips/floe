@@ -7,15 +7,17 @@ import '../models/scene_analysis.dart';
 class PlotThreadProvider extends ChangeNotifier {
   List<PlotThread> _threads = [];
   int _currentSceneNumber = 0;
-  static const String _storageKey = 'plot_threads';
-  static const String _sceneNumberKey = 'current_scene_number';
+  String? _currentDocumentPath;
+  static const String _storageKeyPrefix = 'plot_threads_';
+  static const String _sceneNumberKeyPrefix = 'scene_number_';
 
   PlotThreadProvider() {
-    _loadThreads();
+    // Don't load threads in constructor - wait for document to be set
   }
 
   List<PlotThread> get threads => _threads;
   int get currentSceneNumber => _currentSceneNumber;
+  String? get currentDocumentPath => _currentDocumentPath;
 
   /// Get active threads (not resolved or abandoned)
   List<PlotThread> get activeThreads => _threads
@@ -32,31 +34,63 @@ class PlotThreadProvider extends ChangeNotifier {
   List<PlotThread> get potentiallyAbandonedThreads =>
       _threads.where((t) => t.isPotentiallyAbandoned(_currentSceneNumber)).toList();
 
+  /// Set the current document path and load its threads
+  Future<void> setDocumentPath(String? documentPath) async {
+    // Save current document's threads before switching
+    if (_currentDocumentPath != null) {
+      await _saveThreads();
+    }
+
+    _currentDocumentPath = documentPath;
+    await _loadThreads();
+    notifyListeners();
+  }
+
+  /// Get storage key for current document
+  String _getStorageKey() {
+    if (_currentDocumentPath == null || _currentDocumentPath!.isEmpty) {
+      return '${_storageKeyPrefix}untitled';
+    }
+    // Use base64 encoding of path to handle special characters
+    final pathBytes = utf8.encode(_currentDocumentPath!);
+    final encodedPath = base64Url.encode(pathBytes);
+    return '$_storageKeyPrefix$encodedPath';
+  }
+
+  String _getSceneNumberKey() {
+    if (_currentDocumentPath == null || _currentDocumentPath!.isEmpty) {
+      return '${_sceneNumberKeyPrefix}untitled';
+    }
+    final pathBytes = utf8.encode(_currentDocumentPath!);
+    final encodedPath = base64Url.encode(pathBytes);
+    return '$_sceneNumberKeyPrefix$encodedPath';
+  }
+
   Future<void> _loadThreads() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Load threads
-    final threadsJson = prefs.getString(_storageKey);
+    // Load threads for current document
+    final threadsJson = prefs.getString(_getStorageKey());
     if (threadsJson != null) {
       final List<dynamic> threadsList = json.decode(threadsJson);
       _threads = threadsList
           .map((t) => PlotThread.fromJson(t as Map<String, dynamic>))
           .toList();
+    } else {
+      _threads = [];
     }
 
-    // Load current scene number
-    _currentSceneNumber = prefs.getInt(_sceneNumberKey) ?? 0;
-
-    notifyListeners();
+    // Load current scene number for this document
+    _currentSceneNumber = prefs.getInt(_getSceneNumberKey()) ?? 0;
   }
 
   Future<void> _saveThreads() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-      _storageKey,
+      _getStorageKey(),
       json.encode(_threads.map((t) => t.toJson()).toList()),
     );
-    await prefs.setInt(_sceneNumberKey, _currentSceneNumber);
+    await prefs.setInt(_getSceneNumberKey(), _currentSceneNumber);
   }
 
   /// Process plot threads from a scene analysis
@@ -203,12 +237,28 @@ class PlotThreadProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Clear all threads (for testing or resetting)
+  /// Clear all threads for the current document
   Future<void> clearAllThreads() async {
     _threads = [];
     _currentSceneNumber = 0;
     await _saveThreads();
     notifyListeners();
+  }
+
+  /// Clear threads for a specific document (by path)
+  Future<void> clearThreadsForDocument(String documentPath) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pathBytes = utf8.encode(documentPath);
+    final encodedPath = base64Url.encode(pathBytes);
+    await prefs.remove('$_storageKeyPrefix$encodedPath');
+    await prefs.remove('$_sceneNumberKeyPrefix$encodedPath');
+
+    // If this is the current document, also clear memory
+    if (documentPath == _currentDocumentPath) {
+      _threads = [];
+      _currentSceneNumber = 0;
+      notifyListeners();
+    }
   }
 
   /// Parse thread type from string

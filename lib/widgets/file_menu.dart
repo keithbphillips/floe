@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:doc_text_extractor/doc_text_extractor.dart';
 import '../providers/document_provider.dart';
+import '../providers/plot_thread_provider.dart';
 
 class FileMenu extends StatelessWidget {
   final VoidCallback? onClose;
@@ -132,6 +133,7 @@ class FileMenu extends StatelessWidget {
 
   Future<void> _newDocument(BuildContext context) async {
     final document = context.read<DocumentProvider>();
+    final plotThreads = context.read<PlotThreadProvider>();
 
     // If there are unsaved changes, confirm
     if (document.hasUnsavedChanges) {
@@ -160,6 +162,9 @@ class FileMenu extends StatelessWidget {
 
     document.newDocument();
 
+    // Clear plot threads for new document
+    await plotThreads.setDocumentPath(null);
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -187,6 +192,7 @@ class FileMenu extends StatelessWidget {
 
     try {
       final document = context.read<DocumentProvider>();
+      final plotThreads = context.read<PlotThreadProvider>();
 
       // Check if it's a Word document
       final extension = filePath.toLowerCase().split('.').last;
@@ -214,9 +220,15 @@ class FileMenu extends StatelessWidget {
         // newDocument() clears the file path, so user will need to "Save As"
         document.newDocument();
         document.updateContent(text, 0);
+
+        // Clear plot threads for new imported document
+        await plotThreads.setDocumentPath(null);
       } else {
         // Standard text file loading
         await document.loadFile(filePath);
+
+        // Load plot threads for this document
+        await plotThreads.setDocumentPath(filePath);
       }
 
       if (context.mounted) {
@@ -257,7 +269,12 @@ class FileMenu extends StatelessWidget {
 
     try {
       final document = context.read<DocumentProvider>();
+      final plotThreads = context.read<PlotThreadProvider>();
+
       await document.saveAs(path);
+
+      // Update plot threads to be associated with this file path
+      await plotThreads.setDocumentPath(path);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

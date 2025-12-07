@@ -63,6 +63,12 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
       // Try to load the last opened file
       await docProvider.loadLastFile();
 
+      // Load plot threads for the loaded document
+      if (context.mounted) {
+        final plotThreads = context.read<PlotThreadProvider>();
+        await plotThreads.setDocumentPath(docProvider.filePath);
+      }
+
       // Update controller if content was loaded
       if (docProvider.content.isNotEmpty && _controller.text != docProvider.content) {
         _controller.value = TextEditingValue(

@@ -61,6 +61,17 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
                   color: Colors.grey[600],
                 ),
               ),
+              const SizedBox(width: 12),
+              // Clear all button
+              if (threadProvider.threads.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.clear_all, size: 18),
+                  tooltip: 'Clear all plot threads',
+                  onPressed: () => _showClearConfirmation(context, threadProvider),
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(),
+                  color: Colors.grey[600],
+                ),
             ],
           ),
         ),
@@ -484,5 +495,45 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
         ),
       ],
     );
+  }
+
+  Future<void> _showClearConfirmation(
+    BuildContext context,
+    PlotThreadProvider provider,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear All Plot Threads?'),
+        content: Text(
+          'This will remove all ${provider.threads.length} plot threads for this document. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Clear All'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await provider.clearAllThreads();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('All plot threads cleared'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 }
