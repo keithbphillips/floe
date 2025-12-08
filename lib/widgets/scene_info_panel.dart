@@ -32,8 +32,8 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
   String? _lastAnalyzedSceneText;
   int? _lastAnalyzedSceneStart;
 
-  // Track last processed analysis timestamp to avoid reprocessing
-  DateTime? _lastProcessedAnalysisTime;
+  // Track the scene ID that was last cached to detect when we need to update
+  String? _lastCachedSceneId;
 
   @override
   Widget build(BuildContext context) {
@@ -41,15 +41,24 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // Cache the analyzed scene when analysis updates
+    // Cache the analyzed scene ONLY when the actual analysis changes
+    // This prevents mixing echo words from one scene with text from another
     if (analyzer.currentAnalysis != null) {
       final document = context.read<DocumentProvider>();
-      final sceneText = analyzer.extractCurrentScene(document.content, widget.currentCursorPosition);
-      final sceneStart = document.content.indexOf(sceneText);
+      final currentSceneId = _generateSceneId(document.content, widget.currentCursorPosition);
 
-      if (sceneStart != -1) {
-        _lastAnalyzedSceneText = sceneText;
-        _lastAnalyzedSceneStart = sceneStart;
+      // Only update cached scene text if we're showing a different scene's analysis
+      if (_lastCachedSceneId != currentSceneId) {
+        final sceneText = analyzer.extractCurrentScene(document.content, widget.currentCursorPosition);
+        final sceneStart = document.content.indexOf(sceneText);
+
+        if (sceneStart != -1) {
+          _lastAnalyzedSceneText = sceneText;
+          _lastAnalyzedSceneStart = sceneStart;
+          _lastCachedSceneId = currentSceneId;
+          // Reset echo word indices when scene changes
+          _echoWordIndices.clear();
+        }
       }
 
       // Note: Plot thread processing has been moved to on-demand document-level analysis
@@ -78,6 +87,37 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
+                ),
+              ),
+              // Analyze button
+              ElevatedButton.icon(
+                onPressed: analyzer.isAnalyzing
+                    ? null
+                    : () {
+                        final document = context.read<DocumentProvider>();
+                        final sceneText = analyzer.extractCurrentScene(
+                          document.content,
+                          widget.currentCursorPosition,
+                        );
+                        analyzer.analyzeScene(
+                          sceneText,
+                          fullText: document.content,
+                          cursorPosition: widget.currentCursorPosition,
+                        );
+                      },
+                icon: analyzer.isAnalyzing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.refresh, size: 16),
+                label: const Text('Analyze'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 12),
                 ),
               ),
             ],
@@ -650,6 +690,78 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
     } else {
       return '${diff.inDays}d ago';
     }
+  }
+
+  /// Generate a unique identifier for a scene based on its position in the document
+  String _generateSceneId(String fullText, int cursorPosition) {
+    final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
+    final chapterMatches = chapterPattern.allMatches(fullText).toList();
+    final sceneBreakPattern = RegExp(r'\n\s*\n\s*\n');
+
+    if (chapterMatches.isEmpty) {
+      // No chapters - count scene number
+      final sceneBreaks = sceneBreakPattern.allMatches(fullText).toList();
+
+      if (sceneBreaks.isEmpty) {
+        return 'scene_1';
+      }
+
+      final boundaries = <int>[0];
+      for (final match in sceneBreaks) {
+        boundaries.add(match.end);
+      }
+      boundaries.add(fullText.length);
+
+      for (int i = 0; i < boundaries.length - 1; i++) {
+        if (cursorPosition >= boundaries[i] && cursorPosition < boundaries[i + 1]) {
+          return 'scene_${i + 1}';
+        }
+      }
+      return 'scene_1';
+    } else {
+      // Has chapters - find chapter and scene within chapter
+      for (int chapterIdx = 0; chapterIdx < chapterMatches.length; chapterIdx++) {
+        final chapterMatch = chapterMatches[chapterIdx];
+        final chapterStart = chapterMatch.start;
+        final chapterEnd = chapterIdx < chapterMatches.length - 1
+            ? chapterMatches[chapterIdx + 1].start
+            : fullText.length;
+
+        if (cursorPosition >= chapterStart && cursorPosition < chapterEnd) {
+          final chapterNumber = chapterMatch.group(1);
+
+          // Get chapter content (excluding chapter heading)
+          final chapterHeadingEnd = fullText.indexOf('\n', chapterStart);
+          final chapterContentStart = chapterHeadingEnd != -1 ? chapterHeadingEnd + 1 : chapterStart;
+          final chapterContent = fullText.substring(chapterContentStart, chapterEnd);
+
+          // Find scene breaks within this chapter
+          final scenesInChapter = sceneBreakPattern.allMatches(chapterContent).toList();
+
+          if (scenesInChapter.isEmpty) {
+            return 'ch${chapterNumber}_scene_1';
+          }
+
+          final sceneBoundaries = <int>[0];
+          for (final match in scenesInChapter) {
+            sceneBoundaries.add(match.end);
+          }
+          sceneBoundaries.add(chapterContent.length);
+
+          final relativeCursorPos = cursorPosition - chapterContentStart;
+
+          for (int i = 0; i < sceneBoundaries.length - 1; i++) {
+            if (relativeCursorPos >= sceneBoundaries[i] && relativeCursorPos < sceneBoundaries[i + 1]) {
+              return 'ch${chapterNumber}_scene_${i + 1}';
+            }
+          }
+
+          return 'ch${chapterNumber}_scene_1';
+        }
+      }
+    }
+
+    return 'scene_1';
   }
 
   /// Automatically consolidate plot threads after scene analysis
