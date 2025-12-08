@@ -127,6 +127,15 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
         selection: TextSelection.collapsed(offset: document.content.length),
       );
     }
+    // Update window title when document changes
+    _updateWindowTitle(document);
+  }
+
+  Future<void> _updateWindowTitle(DocumentProvider document) async {
+    final title = document.hasUnsavedChanges
+        ? '${document.documentTitle} - Edited - Floe'
+        : '${document.documentTitle} - Floe';
+    await windowManager.setTitle(title);
   }
 
   void _startAutoAnalysisTimer() {
@@ -182,70 +191,64 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
   Future<void> onWindowClose() async {
     final document = context.read<DocumentProvider>();
 
-    // Check if document has content but no explicit file path (auto-saved draft or imported doc)
-    // OR if there are unsaved changes
-    final needsSave = document.content.trim().isNotEmpty &&
-                      (!document.hasExplicitFilePath || document.hasUnsavedChanges);
-
-    if (!needsSave) {
-      // No save needed, disable prevent close and close immediately
+    // If document is empty, just close
+    if (document.content.trim().isEmpty) {
       await windowManager.setPreventClose(false);
       await windowManager.close();
       return;
     }
 
-    // Show save dialog
-    final shouldClose = await showDialog<bool>(
+    // If document has an explicit file path, automatically save before closing
+    if (document.hasExplicitFilePath && document.filePath != null) {
+      if (document.hasUnsavedChanges) {
+        await document.autoSave();
+      }
+      await windowManager.setPreventClose(false);
+      await windowManager.close();
+      return;
+    }
+
+    // Document has content but no explicit file path (new/draft document)
+    // Show dialog to ask if they want to save with a filename
+    final shouldSave = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Save Document'),
-        content: Text(
-          document.hasExplicitFilePath
-              ? 'You have unsaved changes. Do you want to save before exiting?'
-              : 'This document has not been saved with a filename. Do you want to save it before exiting?',
+        content: const Text(
+          'This document has not been saved with a filename. Do you want to save it before exiting?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Exit Without Saving'),
           ),
           ElevatedButton(
             onPressed: () async {
-              // Save the document
-              if (document.hasExplicitFilePath && document.filePath != null) {
-                // File already has an explicit path, just save
-                await document.autoSave();
-              } else {
-                // Need to show save dialog for new/imported documents
-                final path = await FilePicker.platform.saveFile(
-                  dialogTitle: 'Save Document As',
-                  fileName: 'untitled.md',
-                  type: FileType.custom,
-                  allowedExtensions: ['md'],
-                );
+              // Show save dialog for new documents
+              final path = await FilePicker.platform.saveFile(
+                dialogTitle: 'Save Document As',
+                fileName: 'untitled.md',
+                type: FileType.custom,
+                allowedExtensions: ['md'],
+              );
 
-                if (path != null) {
-                  await document.saveAs(path);
-                } else {
-                  // User cancelled save dialog, don't close
-                  Navigator.of(context).pop(false);
-                  return;
-                }
+              if (path != null) {
+                await document.saveAs(path);
+                Navigator.of(context).pop(true);
+              } else {
+                // User cancelled save dialog, don't close
+                Navigator.of(context).pop(null);
               }
-              Navigator.of(context).pop(true);
             },
-            child: const Text('Save and Exit'),
+            child: const Text('Save'),
           ),
         ],
       ),
     );
 
-    // Only close if user confirmed
-    if (shouldClose == true) {
+    // Close if user chose to exit (with or without saving)
+    // Don't close if user cancelled the save dialog (null)
+    if (shouldSave != null) {
       await windowManager.setPreventClose(false);
       await windowManager.close();
     }

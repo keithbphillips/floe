@@ -36,6 +36,18 @@ class DocumentProvider extends ChangeNotifier {
   int get focusEnd => _focusEnd;
   int get wordCount => _content.trim().isEmpty ? 0 : _content.trim().split(RegExp(r'\s+')).length;
 
+  String get documentTitle {
+    if (_filePath == null) {
+      return 'Untitled';
+    }
+    final fileName = _filePath!.split(Platform.pathSeparator).last;
+    // Remove file extension
+    if (fileName.contains('.')) {
+      return fileName.substring(0, fileName.lastIndexOf('.'));
+    }
+    return fileName;
+  }
+
   void updateContent(String newContent, int cursorPos) {
     _content = newContent;
     _cursorPosition = cursorPos;

@@ -160,14 +160,14 @@ class SettingsDialog extends StatelessWidget {
                     const SizedBox(height: 16),
 
                     _buildSliderSetting(
-                      'Save Interval (seconds)',
-                      settings.autoSaveInterval.toDouble(),
+                      'Save Interval (minutes)',
+                      (settings.autoSaveInterval / 60.0).clamp(1.0, 10.0),
                       1.0,
-                      30.0,
-                      (value) => settings.setAutoSaveInterval(value.round()),
+                      10.0,
+                      (value) => settings.setAutoSaveInterval((value * 60).round()),
                       isDark,
                       showValue: true,
-                      divisions: 29,
+                      divisions: 9,
                     ),
 
                     const SizedBox(height: 32),

@@ -35,7 +35,7 @@ class AppSettings {
     this.lineHeight = 1.8,
     this.focusMode = false,
     this.focusIntensity = 0.3,
-    this.autoSaveInterval = 3,
+    this.autoSaveInterval = 120, // 2 minutes in seconds
     this.aiProvider = 'ollama',
     this.ollamaModel = 'llama3.2:3b',
     this.openAiApiKey = '',
@@ -159,7 +159,7 @@ class AppSettings {
       lineHeight: json['lineHeight'] ?? 1.8,
       focusMode: json['focusMode'] ?? false,
       focusIntensity: json['focusIntensity'] ?? 0.3,
-      autoSaveInterval: json['autoSaveInterval'] ?? 3,
+      autoSaveInterval: json['autoSaveInterval'] ?? 120,
       aiProvider: json['aiProvider'] ?? 'ollama',
       ollamaModel: json['ollamaModel'] ?? 'llama3.2:3b',
       openAiApiKey: json['openAiApiKey'] ?? '',
