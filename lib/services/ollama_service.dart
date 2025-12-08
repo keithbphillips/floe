@@ -70,6 +70,19 @@ class OllamaService implements AiService {
           debugPrint('Response was: $analysisText');
           return null;
         }
+      } else {
+        // Non-200 status code - log the error details
+        debugPrint('Ollama API error: Status ${response.statusCode}');
+        debugPrint('Response body: ${response.body}');
+        try {
+          final errorData = json.decode(response.body);
+          if (errorData['error'] != null) {
+            debugPrint('Error message: ${errorData['error']}');
+          }
+        } catch (e) {
+          // Response body wasn't JSON
+        }
+        return null;
       }
     } catch (e) {
       debugPrint('Scene analysis error: $e');
@@ -193,7 +206,346 @@ NOTE: Plot thread analysis is now done separately at the document level, not per
     };
   }
 
-  /// Analyze entire document for plot threads
+  /// Analyze a single chapter to generate a summary
+  @override
+  Future<Map<String, dynamic>?> analyzeChapterForSummary(String chapterText, int chapterNumber) async {
+    if (chapterText.trim().isEmpty) return null;
+
+    final wordCount = chapterText.trim().split(RegExp(r'\s+')).length;
+    debugPrint('=== Analyzing Chapter $chapterNumber for summary ($wordCount words) ===');
+
+    try {
+      final prompt = _buildChapterSummaryPrompt(chapterText, chapterNumber, wordCount);
+      final schema = _getChapterSummarySchema();
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/generate'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'model': model,
+          'prompt': prompt,
+          'stream': false,
+          'format': schema,
+          'options': {
+            'temperature': 0.0,
+            'num_predict': 1000,
+          },
+        }),
+      ).timeout(const Duration(seconds: 90));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final analysisText = data['response'] as String;
+
+        try {
+          final parsedResult = json.decode(analysisText) as Map<String, dynamic>;
+          debugPrint('Chapter $chapterNumber summary generated successfully');
+          return parsedResult;
+        } catch (e) {
+          debugPrint('Failed to parse chapter summary: $e');
+          return null;
+        }
+      }
+    } catch (e) {
+      debugPrint('Chapter summary analysis error: $e');
+    }
+
+    return null;
+  }
+
+  /// Build prompt for chapter summary
+  String _buildChapterSummaryPrompt(String chapterText, int chapterNumber, int wordCount) {
+    return '''You are an editorial assistant analyzing a chapter of literary fiction. Generate a concise summary of this chapter that captures key plot developments, character actions, and important events.
+
+CHAPTER $chapterNumber ($wordCount words):
+"""
+$chapterText
+"""
+
+YOUR TASK:
+Create a summary that includes:
+1. KEY EVENTS: What actually happens in this chapter (3-5 bullet points)
+2. CHARACTERS: Who appears or is mentioned in this chapter
+3. PLOT DEVELOPMENTS: Any plot threads that are introduced, advanced, or resolved
+4. CONFLICTS: Any conflicts or tensions present in this chapter
+5. LOCATIONS: Where the chapter takes place
+
+IMPORTANT:
+- Focus on WHAT HAPPENS, not analysis or interpretation
+- Be specific about character actions and events
+- Note when plot elements are first introduced vs. continuing from earlier
+- Keep the summary factual and detailed enough to identify plot threads later
+- Aim for 150-250 words total''';
+  }
+
+  /// Get JSON schema for chapter summary
+  Map<String, dynamic> _getChapterSummarySchema() {
+    return {
+      "type": "object",
+      "properties": {
+        "chapter_number": {
+          "type": "integer",
+          "description": "The chapter number being summarized"
+        },
+        "key_events": {
+          "type": "array",
+          "description": "3-5 bullet points of key events that happen in this chapter",
+          "items": {"type": "string"}
+        },
+        "characters": {
+          "type": "array",
+          "description": "List of characters who appear or are mentioned",
+          "items": {"type": "string"}
+        },
+        "plot_developments": {
+          "type": "array",
+          "description": "Plot threads introduced, advanced, or resolved",
+          "items": {"type": "string"}
+        },
+        "conflicts": {
+          "type": "array",
+          "description": "Conflicts or tensions present in this chapter",
+          "items": {"type": "string"}
+        },
+        "locations": {
+          "type": "array",
+          "description": "Locations where the chapter takes place",
+          "items": {"type": "string"}
+        }
+      },
+      "required": ["chapter_number", "key_events", "characters", "plot_developments", "conflicts", "locations"],
+      "additionalProperties": false
+    };
+  }
+
+  /// Generate a detailed narrative summary for a specific plot thread
+  @override
+  Future<String?> generateThreadSummary(
+    String threadTitle,
+    List<int> chapterNumbers,
+    List<Map<String, dynamic>> chapterSummaries,
+  ) async {
+    if (chapterNumbers.isEmpty || chapterSummaries.isEmpty) return null;
+
+    debugPrint('=== Generating summary for thread: "$threadTitle" ===');
+
+    try {
+      // Filter summaries to only chapters where this thread appears
+      final relevantSummaries = chapterSummaries
+          .where((s) => chapterNumbers.contains(s['chapter_number'] as int))
+          .toList();
+
+      if (relevantSummaries.isEmpty) {
+        debugPrint('No relevant chapter summaries found for thread');
+        return null;
+      }
+
+      final summariesText = relevantSummaries.map((summary) {
+        final chNum = summary['chapter_number'] ?? 0;
+        final events = (summary['key_events'] as List?)?.join('\n  • ') ?? '';
+        final plotDevs = (summary['plot_developments'] as List?)?.join('\n  • ') ?? '';
+        final conflicts = (summary['conflicts'] as List?)?.join('\n  • ') ?? '';
+        final chars = (summary['characters'] as List?)?.join(', ') ?? '';
+
+        return '''
+CHAPTER $chNum:
+Characters: $chars
+Key Events:
+  • $events
+Plot Developments:
+  • $plotDevs
+Conflicts:
+  • $conflicts
+''';
+      }).join('\n---\n');
+
+      final prompt = '''You are an editorial assistant creating a narrative summary for a specific plot thread. Based on the chapter summaries provided, write a cohesive, engaging summary of how this plot thread develops across the story.
+
+PLOT THREAD: "$threadTitle"
+
+APPEARS IN CHAPTERS: ${chapterNumbers.join(', ')}
+
+RELEVANT CHAPTER SUMMARIES:
+$summariesText
+
+YOUR TASK:
+Write a 2-3 paragraph narrative summary (150-200 words) that:
+1. Describes how this thread is introduced
+2. Explains how it develops and evolves across the chapters
+3. Notes key turning points or significant moments
+4. Describes its current status (resolved, ongoing, or abandoned)
+5. Uses engaging, descriptive language that captures the dramatic arc
+
+IMPORTANT:
+- Write in past tense, as if narrating the story
+- Focus specifically on THIS thread, not the entire plot
+- Make it read like a cohesive narrative, not a bullet list
+- Highlight the emotional or dramatic stakes involved
+- Keep it concise but engaging''';
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/generate'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'model': model,
+          'prompt': prompt,
+          'stream': false,
+          'options': {
+            'temperature': 0.7, // Slightly higher for more engaging prose
+            'num_predict': 500,
+          },
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final summaryText = data['response'] as String;
+        debugPrint('Thread summary generated successfully (${summaryText.length} chars)');
+        return summaryText.trim();
+      }
+    } catch (e) {
+      debugPrint('Thread summary generation error: $e');
+    }
+
+    return null;
+  }
+
+  /// Analyze chapter summaries to extract plot threads
+  @override
+  Future<List<Map<String, dynamic>>?> analyzeChapterSummariesForThreads(List<Map<String, dynamic>> chapterSummaries) async {
+    if (chapterSummaries.isEmpty) return null;
+
+    debugPrint('=== Analyzing ${chapterSummaries.length} chapter summaries for plot threads ===');
+
+    try {
+      final prompt = _buildThreadExtractionPrompt(chapterSummaries);
+      final schema = _getDocumentThreadsSchema();
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/generate'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'model': model,
+          'prompt': prompt,
+          'stream': false,
+          'format': schema,
+          'options': {
+            'temperature': 0.0,
+            'num_predict': 3000,
+          },
+        }),
+      ).timeout(const Duration(seconds: 180));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final analysisText = data['response'] as String;
+
+        try {
+          final parsedResult = json.decode(analysisText) as Map<String, dynamic>;
+          debugPrint('Thread extraction from summaries completed successfully');
+
+          final threadsList = parsedResult['plot_threads'] as List<dynamic>?;
+          if (threadsList == null) {
+            debugPrint('No plot_threads field in response');
+            return null;
+          }
+
+          return threadsList.map((item) => item as Map<String, dynamic>).toList();
+        } catch (e) {
+          debugPrint('Failed to parse thread extraction output: $e');
+          return null;
+        }
+      }
+    } catch (e) {
+      debugPrint('Thread extraction error: $e');
+    }
+
+    return null;
+  }
+
+  /// Build prompt for extracting threads from chapter summaries
+  String _buildThreadExtractionPrompt(List<Map<String, dynamic>> chapterSummaries) {
+    final summariesText = chapterSummaries.map((summary) {
+      final chNum = summary['chapter_number'] ?? 0;
+      final events = (summary['key_events'] as List?)?.join('\n  • ') ?? '';
+      final plotDevs = (summary['plot_developments'] as List?)?.join('\n  • ') ?? '';
+      final conflicts = (summary['conflicts'] as List?)?.join('\n  • ') ?? '';
+      final chars = (summary['characters'] as List?)?.join(', ') ?? '';
+
+      return '''
+CHAPTER $chNum:
+Characters: $chars
+Key Events:
+  • $events
+Plot Developments:
+  • $plotDevs
+Conflicts:
+  • $conflicts
+''';
+    }).join('\n---\n');
+
+    return '''You are an editorial assistant analyzing plot structure. You have summaries of ${chapterSummaries.length} chapters. Identify ALL major plot threads that span multiple chapters.
+
+CHAPTER SUMMARIES:
+$summariesText
+
+YOUR TASK:
+Identify the major ongoing plot threads across these chapters. Focus on:
+- Main plot lines that drive the narrative forward
+- Character arcs that develop over multiple chapters
+- Subplots that recur throughout the story
+- Mysteries or questions that are introduced and developed
+- Conflicts that persist across chapters
+- Relationships that evolve over time
+
+IMPORTANT GUIDELINES:
+- Each thread MUST appear in multiple chapters (not just one-off events)
+- Each thread MUST have a UNIQUE, SPECIFIC title
+- Limit to 8-15 most significant threads (don't list every minor detail)
+- NOT a thread: Single events, descriptions, settings, or background information that don't carry forward
+- Provide a clear description of how each thread develops across the document
+- Classify each thread's current status: introduced, developing, or resolved
+- Types: main_plot, subplot, character_arc, mystery, conflict, relationship, other
+
+CRITICAL LOCATION TRACKING - Follow these steps for EACH thread:
+
+STEP 1: SCAN SEQUENTIALLY through the chapter summaries from beginning to end
+- As you read through each chapter summary, note ONLY the chapters where this specific thread is explicitly mentioned, shown, or discussed
+- DO NOT assume a thread continues between mentions - only record actual appearances in the summaries
+
+STEP 2: IDENTIFY BOUNDARIES with precision:
+- starts_at: The EXACT chapter number where this thread FIRST appears (e.g., "1", "5", "7")
+  * This is where the character first appears, the conflict first emerges, or the mystery is first introduced
+  * DO NOT write "1" as a default - find the actual first mention by scanning from the beginning
+
+- ends_at: The EXACT chapter number where this thread LAST appears (e.g., "10" or "ongoing")
+  * If resolved (conflict ends, mystery solved): use that chapter number (e.g., "10")
+  * If still unresolved but thread stops being mentioned: use the last chapter it appears in
+  * Only use "ongoing" if: (a) the thread is unresolved AND (b) it appears in the final chapter
+
+- chapters: Array of ONLY the chapter numbers where this thread actually appears in the summaries [e.g., 1, 3, 5, 8]
+  * DO NOT fill in gaps - if a thread appears in chapters 1, 5, and 8, write [1, 5, 8] NOT [1, 2, 3, 4, 5, 6, 7, 8]
+  * Each number must correspond to a chapter where the thread is explicitly present in the summary
+
+STEP 3: VERIFY YOUR WORK:
+- Double-check: Does starts_at match the first number in chapters array?
+- Double-check: Does ends_at match the last number in chapters array (or is "ongoing")?
+- Double-check: Did you skip any chapters in the chapters array? Good! Only include actual mentions.
+
+COMMON MISTAKES TO AVOID:
+❌ WRONG: Thread introduced in Ch 1, so it must run through all chapters → [1, 2, 3, 4, 5, 6]
+✅ RIGHT: Thread introduced in Ch 1, appears in Ch 1, 4, 6 → [1, 4, 6]
+
+❌ WRONG: Thread feels like it spans the whole story, so starts_at="1"
+✅ RIGHT: Thread first mentioned in Ch 3, so starts_at="3"
+
+❌ WRONG: Thread unresolved, so ends_at="ongoing" (even though last mention was Ch 8)
+✅ RIGHT: Thread last appears in Ch 8, so ends_at="8"
+
+Focus on threads that have narrative momentum and contribute to the story's structure.''';
+  }
+
+  /// Analyze entire document for plot threads (legacy method)
   @override
   Future<List<Map<String, dynamic>>?> analyzeDocumentForPlotThreads(String fullText) async {
     if (fullText.trim().isEmpty) return null;
@@ -277,17 +629,42 @@ IMPORTANT GUIDELINES:
 - Classify each thread's current status: introduced, developing, or resolved
 - Types: main_plot, subplot, character_arc, mystery, conflict, relationship, other
 
-CRITICAL: For each thread, carefully identify WHERE it appears:
-- starts_at: The EXACT chapter number where this thread is FIRST introduced (e.g., "1", "5", "7"). Read carefully through the text to find the FIRST mention of this character/event. DO NOT guess or assume - if Todd doesn't appear until Chapter 7, write "7" not "1"
-- ends_at: The LAST chapter number where this thread is mentioned or relevant. If the thread is resolved (conflict ends, question answered, arc completes), use that chapter number. Only use "ongoing" if the thread is still unresolved AND appears in the final chapter.
-- chapters: A list of ALL chapter numbers where this thread appears or is mentioned (e.g., [7, 8, 10, 11, 12]). Include every chapter where the thread is relevant. If a thread appears in chapters 7, 8, 10, don't include 9 if it's not mentioned there.
+CRITICAL LOCATION TRACKING - Follow these steps for EACH thread:
 
-IMPORTANT:
-- Look for "Chapter X" markers in the text to identify chapter boundaries
-- Track which chapters each thread actually appears in by reading carefully
-- For ends_at: Use the ACTUAL last chapter where mentioned, not the document's last chapter
-- A thread that resolves in Chapter 10 should have ends_at="10", NOT "ongoing" or the last chapter
-- Be PRECISE - base your answer on what you actually read, not assumptions
+STEP 1: SCAN SEQUENTIALLY through the document from beginning to end
+- As you read through each chapter, note ONLY the chapters where this specific thread is explicitly mentioned, shown, or discussed
+- DO NOT assume a thread continues between mentions - only record actual appearances
+
+STEP 2: IDENTIFY BOUNDARIES with precision:
+- starts_at: The EXACT chapter number where this thread FIRST appears (e.g., "1", "5", "7")
+  * This is where the character first appears, the conflict first emerges, or the mystery is first introduced
+  * DO NOT write "1" as a default - find the actual first mention by scanning from the beginning
+
+- ends_at: The EXACT chapter number where this thread LAST appears (e.g., "10" or "ongoing")
+  * If resolved (conflict ends, mystery solved): use that chapter number (e.g., "10")
+  * If still unresolved but thread stops being mentioned: use the last chapter it appears in
+  * Only use "ongoing" if: (a) the thread is unresolved AND (b) it appears in the final chapter
+
+- chapters: Array of ONLY the chapter numbers where this thread actually appears [e.g., 1, 3, 5, 8]
+  * DO NOT fill in gaps - if a thread appears in chapters 1, 5, and 8, write [1, 5, 8] NOT [1, 2, 3, 4, 5, 6, 7, 8]
+  * Each number must correspond to a chapter where the thread is explicitly present
+
+STEP 3: VERIFY YOUR WORK:
+- Double-check: Does starts_at match the first number in chapters array?
+- Double-check: Does ends_at match the last number in chapters array (or is "ongoing")?
+- Double-check: Did you skip any chapters in the chapters array? Good! Only include actual mentions.
+
+COMMON MISTAKES TO AVOID:
+❌ WRONG: Thread introduced in Ch 1, so it must run through all chapters → [1, 2, 3, 4, 5, 6]
+✅ RIGHT: Thread introduced in Ch 1, appears in Ch 1, 4, 6 → [1, 4, 6]
+
+❌ WRONG: Thread feels like it spans the whole story, so starts_at="1"
+✅ RIGHT: Thread first mentioned in Ch 3, so starts_at="3"
+
+❌ WRONG: Thread unresolved, so ends_at="ongoing" (even though last mention was Ch 8)
+✅ RIGHT: Thread last appears in Ch 8, so ends_at="8"
+
+Look for "Chapter X" markers in the text to identify chapter boundaries. Base your answer ONLY on what you actually read, not on assumptions about story structure.
 
 Focus on threads that have narrative momentum and contribute to the story's structure.''';
   }

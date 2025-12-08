@@ -318,10 +318,34 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
     return false;
   }
 
-  List<PlotThread> _getThreadsForScene(int sceneNumber) {
+  List<PlotThread> _getThreadsForScene(StructureUnit unit, List<StructureUnit> allUnits) {
     final threadProvider = context.read<PlotThreadProvider>();
+
+    // Find the chapter number this scene belongs to
+    int chapterNumber = 1; // Default to 1 if no chapters
+
+    if (unit.label != null) {
+      if (unit.label!.startsWith('Ch ')) {
+        // Extract chapter number from labels like "Ch 7" or "Ch 7.2"
+        final parts = unit.label!.substring(3).split('.');
+        chapterNumber = int.tryParse(parts[0]) ?? 1;
+      } else {
+        // For documents without chapters, the label is just the scene number
+        // But we need to find which chapter bubble this scene is under
+        // Search backwards through units to find the parent chapter
+        final unitIndex = allUnits.indexOf(unit);
+        for (int i = unitIndex - 1; i >= 0; i--) {
+          if (allUnits[i].type == 'chapter' && allUnits[i].label != null) {
+            chapterNumber = int.tryParse(allUnits[i].label!) ?? 1;
+            break;
+          }
+        }
+      }
+    }
+
+    // Match threads by chapter number (since LLM tracks by chapter)
     return threadProvider.threads
-        .where((thread) => thread.sceneAppearances.contains(sceneNumber))
+        .where((thread) => thread.sceneAppearances.contains(chapterNumber))
         .toList();
   }
 
@@ -394,8 +418,8 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
                   : Color(settings.sceneBubbleColorLight));
 
           // Get threads for this scene (only for scenes, not chapters)
-          final sceneThreads = !isChapter && unit.label != null
-              ? _getThreadsForScene(int.tryParse(unit.label!.split('.').last) ?? 0)
+          final sceneThreads = !isChapter
+              ? _getThreadsForScene(unit, units)
               : <PlotThread>[];
 
           return Padding(

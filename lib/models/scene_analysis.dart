@@ -122,7 +122,9 @@ class SceneAnalysis {
               ?.map((e) => PlotThreadMention.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      analyzedAt: DateTime.now(),
+      analyzedAt: json['analyzed_at'] != null
+          ? DateTime.parse(json['analyzed_at'] as String)
+          : DateTime.now(),
     );
   }
 
@@ -141,6 +143,7 @@ class SceneAnalysis {
       'structure': structure,
       'hunches': hunches,
       'plot_threads': plotThreads.map((t) => t.toJson()).toList(),
+      'analyzed_at': analyzedAt.toIso8601String(),
     };
   }
 

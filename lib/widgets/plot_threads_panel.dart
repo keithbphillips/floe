@@ -738,6 +738,110 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // AI Summary section (if available)
+              if (thread.aiSummary != null && thread.aiSummary!.isNotEmpty) ...[
+                Row(
+                  children: [
+                    Icon(Icons.auto_awesome, size: 16, color: Colors.blue[400]),
+                    const SizedBox(width: 6),
+                    Text(
+                      'AI Summary',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue[400],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.withOpacity(0.2)),
+                  ),
+                  child: Text(
+                    thread.aiSummary!,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      height: 1.5,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // Generate Summary button (if no summary yet)
+              if (thread.aiSummary == null || thread.aiSummary!.isEmpty) ...[
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    // Show loading
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const AlertDialog(
+                        content: Row(
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(width: 16),
+                            Expanded(child: Text('Generating AI summary from chapter summaries...')),
+                          ],
+                        ),
+                      ),
+                    );
+
+                    try {
+                      final settings = context.read<AppSettingsProvider>();
+                      final aiService = settings.aiProvider == 'openai'
+                          ? OpenAiService(
+                              apiKey: settings.openAiApiKey,
+                              model: settings.openAiModel,
+                            )
+                          : OllamaService(
+                              model: settings.ollamaModel,
+                            );
+
+                      final summary = await provider.generateThreadSummary(thread.id, aiService);
+
+                      if (context.mounted) {
+                        Navigator.of(context).pop(); // Close loading
+
+                        if (summary != null) {
+                          // Close and reopen dialog to show new summary
+                          Navigator.of(context).pop();
+                          _showThreadDetailsDialog(context, provider.threads.firstWhere((t) => t.id == thread.id), provider);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to generate summary. Make sure chapter summaries exist.'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                        }
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.auto_awesome, size: 16),
+                  label: const Text('Generate AI Summary'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.blue[400],
+                    side: BorderSide(color: Colors.blue[400]!),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               // Description
               if (thread.description.isNotEmpty) ...[
                 Text(
@@ -957,7 +1061,8 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
                 model: settings.ollamaModel,
               );
 
-        final result = await provider.analyzeDocumentThreads(
+        // Use new two-phase analysis (summarize chapters, then extract threads)
+        final result = await provider.analyzeDocumentThreadsViaSummaries(
           documentProvider.content,
           aiService,
         );

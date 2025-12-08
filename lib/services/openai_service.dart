@@ -379,6 +379,295 @@ Focus on threads that have narrative momentum and contribute to the story's stru
     };
   }
 
+  /// Analyze a single chapter to generate a summary
+  @override
+  Future<Map<String, dynamic>?> analyzeChapterForSummary(String chapterText, int chapterNumber) async {
+    if (chapterText.trim().isEmpty || apiKey.isEmpty) return null;
+
+    final wordCount = chapterText.trim().split(RegExp(r'\s+')).length;
+    debugPrint('=== Analyzing Chapter $chapterNumber for summary ($wordCount words) ===');
+
+    try {
+      final prompt = '''You are an editorial assistant analyzing a chapter of literary fiction. Generate a concise summary of this chapter that captures key plot developments, character actions, and important events.
+
+CHAPTER $chapterNumber ($wordCount words):
+"""
+$chapterText
+"""
+
+YOUR TASK:
+Create a summary that includes:
+1. KEY EVENTS: What actually happens in this chapter (3-5 bullet points)
+2. CHARACTERS: Who appears or is mentioned in this chapter
+3. PLOT DEVELOPMENTS: Any plot threads that are introduced, advanced, or resolved
+4. CONFLICTS: Any conflicts or tensions present in this chapter
+5. LOCATIONS: Where the chapter takes place
+
+IMPORTANT:
+- Focus on WHAT HAPPENS, not analysis or interpretation
+- Be specific about character actions and events
+- Note when plot elements are first introduced vs. continuing from earlier
+- Keep the summary factual and detailed enough to identify plot threads later
+- Aim for 150-250 words total''';
+
+      final schema = {
+        "type": "object",
+        "properties": {
+          "chapter_number": {"type": "integer"},
+          "key_events": {"type": "array", "items": {"type": "string"}},
+          "characters": {"type": "array", "items": {"type": "string"}},
+          "plot_developments": {"type": "array", "items": {"type": "string"}},
+          "conflicts": {"type": "array", "items": {"type": "string"}},
+          "locations": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["chapter_number", "key_events", "characters", "plot_developments", "conflicts", "locations"],
+        "additionalProperties": false,
+      };
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: json.encode({
+          'model': model,
+          'messages': [
+            {'role': 'system', 'content': 'You are an editorial assistant that analyzes literary fiction.'},
+            {'role': 'user', 'content': prompt},
+          ],
+          'temperature': 0.3,
+          'max_tokens': 1000,
+          'response_format': {
+            'type': 'json_schema',
+            'json_schema': {
+              'name': 'chapter_summary',
+              'strict': true,
+              'schema': schema,
+            }
+          }
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final analysisText = data['choices'][0]['message']['content'] as String;
+        final parsedResult = json.decode(analysisText) as Map<String, dynamic>;
+        debugPrint('Chapter $chapterNumber summary generated successfully');
+        return parsedResult;
+      }
+    } catch (e) {
+      debugPrint('Chapter summary analysis error: $e');
+    }
+
+    return null;
+  }
+
+  /// Generate a detailed narrative summary for a specific plot thread
+  @override
+  Future<String?> generateThreadSummary(
+    String threadTitle,
+    List<int> chapterNumbers,
+    List<Map<String, dynamic>> chapterSummaries,
+  ) async {
+    if (chapterNumbers.isEmpty || chapterSummaries.isEmpty || apiKey.isEmpty) return null;
+
+    debugPrint('=== Generating summary for thread: "$threadTitle" ===');
+
+    try {
+      // Filter summaries to only chapters where this thread appears
+      final relevantSummaries = chapterSummaries
+          .where((s) => chapterNumbers.contains(s['chapter_number'] as int))
+          .toList();
+
+      if (relevantSummaries.isEmpty) return null;
+
+      final summariesText = relevantSummaries.map((summary) {
+        final chNum = summary['chapter_number'] ?? 0;
+        final events = (summary['key_events'] as List?)?.join('\n  • ') ?? '';
+        final plotDevs = (summary['plot_developments'] as List?)?.join('\n  • ') ?? '';
+        final conflicts = (summary['conflicts'] as List?)?.join('\n  • ') ?? '';
+        final chars = (summary['characters'] as List?)?.join(', ') ?? '';
+
+        return '''
+CHAPTER $chNum:
+Characters: $chars
+Key Events:
+  • $events
+Plot Developments:
+  • $plotDevs
+Conflicts:
+  • $conflicts
+''';
+      }).join('\n---\n');
+
+      final prompt = '''You are an editorial assistant creating a narrative summary for a specific plot thread. Based on the chapter summaries provided, write a cohesive, engaging summary of how this plot thread develops across the story.
+
+PLOT THREAD: "$threadTitle"
+
+APPEARS IN CHAPTERS: ${chapterNumbers.join(', ')}
+
+RELEVANT CHAPTER SUMMARIES:
+$summariesText
+
+YOUR TASK:
+Write a 2-3 paragraph narrative summary (150-200 words) that:
+1. Describes how this thread is introduced
+2. Explains how it develops and evolves across the chapters
+3. Notes key turning points or significant moments
+4. Describes its current status (resolved, ongoing, or abandoned)
+5. Uses engaging, descriptive language that captures the dramatic arc
+
+IMPORTANT:
+- Write in past tense, as if narrating the story
+- Focus specifically on THIS thread, not the entire plot
+- Make it read like a cohesive narrative, not a bullet list
+- Highlight the emotional or dramatic stakes involved
+- Keep it concise but engaging''';
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: json.encode({
+          'model': model,
+          'messages': [
+            {'role': 'system', 'content': 'You are an editorial assistant that creates engaging narrative summaries.'},
+            {'role': 'user', 'content': prompt},
+          ],
+          'temperature': 0.7,
+          'max_tokens': 500,
+        }),
+      ).timeout(const Duration(seconds: 60));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final summaryText = data['choices'][0]['message']['content'] as String;
+        debugPrint('Thread summary generated successfully (${summaryText.length} chars)');
+        return summaryText.trim();
+      }
+    } catch (e) {
+      debugPrint('Thread summary generation error: $e');
+    }
+
+    return null;
+  }
+
+  /// Analyze chapter summaries to extract plot threads
+  @override
+  Future<List<Map<String, dynamic>>?> analyzeChapterSummariesForThreads(List<Map<String, dynamic>> chapterSummaries) async {
+    if (chapterSummaries.isEmpty || apiKey.isEmpty) return null;
+
+    debugPrint('=== Analyzing ${chapterSummaries.length} chapter summaries for plot threads ===');
+
+    try {
+      final summariesText = chapterSummaries.map((summary) {
+        final chNum = summary['chapter_number'] ?? 0;
+        final events = (summary['key_events'] as List?)?.join('\n  • ') ?? '';
+        final plotDevs = (summary['plot_developments'] as List?)?.join('\n  • ') ?? '';
+        final conflicts = (summary['conflicts'] as List?)?.join('\n  • ') ?? '';
+        final chars = (summary['characters'] as List?)?.join(', ') ?? '';
+
+        return '''
+CHAPTER $chNum:
+Characters: $chars
+Key Events:
+  • $events
+Plot Developments:
+  • $plotDevs
+Conflicts:
+  • $conflicts
+''';
+      }).join('\n---\n');
+
+      final prompt = '''You are an editorial assistant analyzing plot structure. You have summaries of ${chapterSummaries.length} chapters. Identify ALL major plot threads that span multiple chapters.
+
+CHAPTER SUMMARIES:
+$summariesText
+
+YOUR TASK:
+Identify the major ongoing plot threads across these chapters. Focus on:
+- Main plot lines that drive the narrative forward
+- Character arcs that develop over multiple chapters
+- Subplots that recur throughout the story
+- Mysteries or questions that are introduced and developed
+- Conflicts that persist across chapters
+- Relationships that evolve over time
+
+For each thread, provide: title, description, status (introduced/developing/resolved), type, starts_at chapter, ends_at chapter, and list of ALL chapters where it appears.
+
+CRITICAL: Only list chapters where the thread ACTUALLY appears in the summaries. Do not fill gaps. If a thread appears in chapters 1, 5, 8, list [1, 5, 8] NOT [1, 2, 3, 4, 5, 6, 7, 8].''';
+
+      final schema = {
+        "type": "object",
+        "properties": {
+          "plot_threads": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "status": {"type": "string", "enum": ["introduced", "developing", "resolved"]},
+                "type": {"type": "string", "enum": ["main_plot", "subplot", "character_arc", "mystery", "conflict", "relationship", "other"]},
+                "starts_at": {"type": "string"},
+                "ends_at": {"type": "string"},
+                "chapters": {"type": "array", "items": {"type": "integer"}},
+              },
+              "required": ["title", "description", "status", "type", "starts_at", "ends_at", "chapters"],
+              "additionalProperties": false,
+            }
+          }
+        },
+        "required": ["plot_threads"],
+        "additionalProperties": false,
+      };
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: json.encode({
+          'model': model,
+          'messages': [
+            {'role': 'system', 'content': 'You are an editorial assistant that analyzes plot structure.'},
+            {'role': 'user', 'content': prompt},
+          ],
+          'temperature': 0.3,
+          'max_tokens': 3000,
+          'response_format': {
+            'type': 'json_schema',
+            'json_schema': {
+              'name': 'plot_threads',
+              'strict': true,
+              'schema': schema,
+            }
+          }
+        }),
+      ).timeout(const Duration(seconds: 120));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final analysisText = data['choices'][0]['message']['content'] as String;
+        final parsedResult = json.decode(analysisText) as Map<String, dynamic>;
+        debugPrint('Thread extraction from summaries completed successfully');
+
+        final threadsList = parsedResult['plot_threads'] as List<dynamic>?;
+        if (threadsList == null) return null;
+
+        return threadsList.map((item) => item as Map<String, dynamic>).toList();
+      }
+    } catch (e) {
+      debugPrint('Thread extraction error: $e');
+    }
+
+    return null;
+  }
+
   /// Consolidate plot threads - analyze all threads and clean up duplicates/non-threads
   @override
   Future<Map<String, dynamic>?> consolidateThreads(List<Map<String, dynamic>> threads) async {

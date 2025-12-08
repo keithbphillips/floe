@@ -10,12 +10,16 @@ class PlotThreadProvider extends ChangeNotifier {
   String? _currentDocumentPath;
   static const String _storageKeyPrefix = 'plot_threads_';
   static const String _sceneNumberKeyPrefix = 'scene_number_';
+  static const String _chapterSummariesKeyPrefix = 'chapter_summaries_';
 
   // Track processed analysis timestamps to prevent duplicate processing
   final Set<String> _processedAnalysisIds = {};
 
   // Counter to ensure unique IDs even when created in the same millisecond
   int _threadIdCounter = 0;
+
+  // Cache chapter summaries
+  Map<int, Map<String, dynamic>> _chapterSummaries = {};
 
   PlotThreadProvider() {
     // Don't load threads in constructor - wait for document to be set
@@ -72,6 +76,15 @@ class PlotThreadProvider extends ChangeNotifier {
     return '$_sceneNumberKeyPrefix$encodedPath';
   }
 
+  String _getChapterSummariesKey() {
+    if (_currentDocumentPath == null || _currentDocumentPath!.isEmpty) {
+      return '${_chapterSummariesKeyPrefix}untitled';
+    }
+    final pathBytes = utf8.encode(_currentDocumentPath!);
+    final encodedPath = base64Url.encode(pathBytes);
+    return '$_chapterSummariesKeyPrefix$encodedPath';
+  }
+
   Future<void> _loadThreads() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -88,6 +101,18 @@ class PlotThreadProvider extends ChangeNotifier {
 
     // Load current scene number for this document
     _currentSceneNumber = prefs.getInt(_getSceneNumberKey()) ?? 0;
+
+    // Load chapter summaries
+    final summariesJson = prefs.getString(_getChapterSummariesKey());
+    if (summariesJson != null) {
+      final Map<String, dynamic> summariesMap = json.decode(summariesJson);
+      _chapterSummaries = summariesMap.map((key, value) =>
+        MapEntry(int.parse(key), value as Map<String, dynamic>)
+      );
+      debugPrint('Loaded ${_chapterSummaries.length} chapter summaries');
+    } else {
+      _chapterSummaries = {};
+    }
   }
 
   Future<void> _saveThreads() async {
@@ -97,6 +122,19 @@ class PlotThreadProvider extends ChangeNotifier {
       json.encode(_threads.map((t) => t.toJson()).toList()),
     );
     await prefs.setInt(_getSceneNumberKey(), _currentSceneNumber);
+  }
+
+  Future<void> _saveChapterSummaries() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Convert int keys to strings for JSON
+    final summariesMap = _chapterSummaries.map((key, value) =>
+      MapEntry(key.toString(), value)
+    );
+    await prefs.setString(
+      _getChapterSummariesKey(),
+      json.encode(summariesMap),
+    );
+    debugPrint('Saved ${_chapterSummaries.length} chapter summaries');
   }
 
   /// Process plot threads from a scene analysis
@@ -289,7 +327,190 @@ class PlotThreadProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Analyze entire document for plot threads (on-demand)
+  /// Analyze document using two-phase approach: summarize chapters, then extract threads
+  /// This is the NEW recommended method that provides better accuracy
+  Future<Map<String, dynamic>> analyzeDocumentThreadsViaSummaries(String fullDocumentText, dynamic aiService) async {
+    if (fullDocumentText.trim().isEmpty) {
+      return {'error': 'Empty document', 'threadsFound': 0};
+    }
+
+    debugPrint('=== Starting two-phase document analysis ===');
+
+    try {
+      // Phase 1: Extract chapters and generate summaries
+      final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
+      final chapterMatches = chapterPattern.allMatches(fullDocumentText).toList();
+
+      if (chapterMatches.isEmpty) {
+        debugPrint('No chapters found - falling back to direct analysis');
+        return analyzeDocumentThreads(fullDocumentText, aiService);
+      }
+
+      final totalChapters = chapterMatches.length;
+      debugPrint('Found $totalChapters chapters to analyze');
+
+      // Extract and summarize each chapter
+      final chapterSummaries = <Map<String, dynamic>>[];
+
+      for (int i = 0; i < chapterMatches.length; i++) {
+        final chapterMatch = chapterMatches[i];
+        final chapterNumber = int.tryParse(chapterMatch.group(1) ?? '0') ?? (i + 1);
+        final chapterStart = chapterMatch.start;
+        final chapterEnd = i < chapterMatches.length - 1
+            ? chapterMatches[i + 1].start
+            : fullDocumentText.length;
+
+        final chapterText = fullDocumentText.substring(chapterStart, chapterEnd);
+
+        // Check if we have a cached summary for this chapter
+        if (_chapterSummaries.containsKey(chapterNumber)) {
+          debugPrint('Using cached summary for Chapter $chapterNumber');
+          chapterSummaries.add(_chapterSummaries[chapterNumber]!);
+        } else {
+          debugPrint('Analyzing Chapter $chapterNumber (${chapterText.length} chars)...');
+
+          final summary = await aiService.analyzeChapterForSummary(chapterText, chapterNumber);
+
+          if (summary != null) {
+            _chapterSummaries[chapterNumber] = summary;
+            chapterSummaries.add(summary);
+            debugPrint('✓ Chapter $chapterNumber summarized');
+          } else {
+            debugPrint('✗ Failed to summarize Chapter $chapterNumber');
+            // Continue with other chapters even if one fails
+          }
+
+          // Small delay to avoid overwhelming the API
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+
+      if (chapterSummaries.isEmpty) {
+        debugPrint('No chapter summaries generated');
+        return {'error': 'Failed to generate chapter summaries', 'threadsFound': 0};
+      }
+
+      // Save chapter summaries
+      await _saveChapterSummaries();
+
+      debugPrint('Phase 1 complete: ${chapterSummaries.length} chapter summaries generated');
+
+      // Phase 2: Analyze summaries to extract plot threads
+      debugPrint('Phase 2: Extracting threads from summaries...');
+
+      final threadsList = await aiService.analyzeChapterSummariesForThreads(chapterSummaries);
+
+      if (threadsList == null || threadsList.isEmpty) {
+        debugPrint('No threads found in summaries');
+        return {'error': 'No threads found', 'threadsFound': 0, 'summariesGenerated': chapterSummaries.length};
+      }
+
+      debugPrint('AI found ${threadsList.length} threads from summaries');
+
+      // Clear existing threads (we're replacing with fresh analysis)
+      _threads = [];
+      _currentSceneNumber = 1;
+
+      // Convert AI threads to PlotThread objects (same as legacy method)
+      for (final threadData in threadsList) {
+        final title = threadData['title'] as String;
+        final description = threadData['description'] as String;
+        final status = threadData['status'] as String;
+        final type = threadData['type'] as String;
+        final startsAt = threadData['starts_at'] as String?;
+        final endsAt = threadData['ends_at'] as String?;
+        final chaptersRaw = threadData['chapters'] as List<dynamic>?;
+
+        // Parse chapter numbers from AI
+        List<int> chapters = [];
+        if (chaptersRaw != null) {
+          chapters = chaptersRaw.map((c) => c is int ? c : int.tryParse(c.toString()) ?? 0).where((c) => c > 0).toList();
+        }
+
+        // Parse start/end chapters
+        int introducedAt = 0;
+        int lastMentioned = 0;
+
+        if (startsAt != null) {
+          final parsed = int.tryParse(startsAt.replaceAll(RegExp(r'[^0-9]'), ''));
+          if (parsed != null) introducedAt = parsed;
+        }
+
+        bool isOngoing = false;
+        if (endsAt != null) {
+          if (endsAt.toLowerCase() == 'ongoing') {
+            lastMentioned = totalChapters;
+            isOngoing = true;
+          } else {
+            final parsed = int.tryParse(endsAt.replaceAll(RegExp(r'[^0-9]'), ''));
+            if (parsed != null) lastMentioned = parsed;
+          }
+        }
+
+        // Use chapters list from AI
+        if (chapters.isNotEmpty) {
+          chapters.sort();
+          if (introducedAt == 0) introducedAt = chapters.first;
+          lastMentioned = chapters.last;
+        } else if (introducedAt > 0) {
+          // No chapters list - use start/end only
+          lastMentioned = lastMentioned > 0 ? lastMentioned : introducedAt;
+          chapters = [introducedAt];
+          if (lastMentioned > introducedAt) {
+            chapters.add(lastMentioned);
+          }
+        }
+
+        // Generate unique ID
+        final uniqueId = '${DateTime.now().millisecondsSinceEpoch}_${_threadIdCounter++}';
+
+        // Map status to PlotThreadStatus
+        PlotThreadStatus threadStatus;
+        if (status == 'resolved') {
+          threadStatus = PlotThreadStatus.resolved;
+        } else if (status == 'developing') {
+          threadStatus = PlotThreadStatus.developing;
+        } else {
+          threadStatus = PlotThreadStatus.introduced;
+        }
+
+        final thread = PlotThread(
+          id: uniqueId,
+          title: title,
+          description: description,
+          type: _parseThreadType(type),
+          status: threadStatus,
+          introducedAtScene: introducedAt,
+          lastMentionedAtScene: lastMentioned > 0 ? lastMentioned : introducedAt,
+          sceneAppearances: chapters.isNotEmpty ? chapters : [introducedAt],
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+
+        _threads.add(thread);
+        debugPrint('Created thread: "$title" (${thread.type.name}) - Ch $startsAt to $endsAt, appears in: $chapters');
+      }
+
+      await _saveThreads();
+      notifyListeners();
+
+      debugPrint('Two-phase analysis complete: ${_threads.length} threads loaded from ${chapterSummaries.length} summaries');
+
+      return {
+        'threadsFound': _threads.length,
+        'summariesGenerated': chapterSummaries.length,
+        'success': true,
+      };
+    } catch (e) {
+      debugPrint('Two-phase thread analysis error: $e');
+      return {
+        'error': e.toString(),
+        'threadsFound': 0,
+      };
+    }
+  }
+
+  /// Analyze entire document for plot threads (LEGACY - direct analysis)
   /// Clears existing threads and replaces with AI-detected threads from full document
   Future<Map<String, dynamic>> analyzeDocumentThreads(String fullDocumentText, dynamic aiService) async {
     if (fullDocumentText.trim().isEmpty) {
@@ -608,6 +829,43 @@ class PlotThreadProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Generate AI summary for a specific thread
+  Future<String?> generateThreadSummary(String threadId, dynamic aiService) async {
+    final thread = _threads.firstWhere((t) => t.id == threadId);
+
+    if (_chapterSummaries.isEmpty) {
+      debugPrint('No chapter summaries available for thread summary generation');
+      return null;
+    }
+
+    debugPrint('Generating summary for thread: "${thread.title}"');
+
+    final summary = await aiService.generateThreadSummary(
+      thread.title,
+      thread.sceneAppearances,
+      _chapterSummaries.values.toList(),
+    );
+
+    if (summary != null) {
+      // Update thread with AI summary
+      final updatedThread = thread.copyWith(
+        aiSummary: summary,
+        updatedAt: DateTime.now(),
+      );
+
+      _threads = _threads.map((t) => t.id == threadId ? updatedThread : t).toList();
+      await _saveThreads();
+      notifyListeners();
+
+      debugPrint('Thread summary generated and saved');
+    }
+
+    return summary;
+  }
+
+  /// Get chapter summaries (for accessing from outside)
+  Map<int, Map<String, dynamic>> get chapterSummaries => _chapterSummaries;
 
   /// Parse thread type from string
   PlotThreadType _parseThreadType(String type) {

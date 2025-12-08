@@ -1,4 +1,7 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path;
 import '../models/scene_analysis.dart';
 import '../services/ai_service.dart';
 import '../services/ollama_service.dart';
@@ -11,6 +14,11 @@ class SceneAnalyzerProvider extends ChangeNotifier {
   bool _aiAvailable = false;
   String? _error;
   String _currentProvider = 'ollama';
+
+  // Storage for scene analyses
+  final Map<String, SceneAnalysis> _sceneAnalyses = {};
+  String? _currentDocumentPath;
+  String? _currentSceneId;
 
   SceneAnalyzerProvider() {
     _aiService = OllamaService();
@@ -51,7 +59,13 @@ class SceneAnalyzerProvider extends ChangeNotifier {
 
   /// Analyze the current scene
   /// [existingPlotThreads] is a list of existing plot thread titles to help AI avoid duplicates
-  Future<void> analyzeScene(String sceneText, {List<String>? existingPlotThreads}) async {
+  /// [fullText] and [cursorPosition] are used to generate scene ID for storage
+  Future<void> analyzeScene(
+    String sceneText, {
+    List<String>? existingPlotThreads,
+    String? fullText,
+    int? cursorPosition,
+  }) async {
     if (sceneText.trim().isEmpty) return;
 
     _isAnalyzing = true;
@@ -109,6 +123,16 @@ class SceneAnalyzerProvider extends ChangeNotifier {
       _currentAnalysis = _createSimpleAnalysis(sceneText);
     } finally {
       _isAnalyzing = false;
+
+      // Save the analysis to cache if we have the necessary context
+      if (_currentAnalysis != null && fullText != null && cursorPosition != null) {
+        final sceneId = _generateSceneId(fullText, cursorPosition);
+        _currentSceneId = sceneId;
+        _sceneAnalyses[sceneId] = _currentAnalysis!;
+        await _saveSceneAnalyses();
+        debugPrint('Saved analysis for scene $sceneId');
+      }
+
       notifyListeners();
     }
   }
@@ -234,5 +258,186 @@ class SceneAnalyzerProvider extends ChangeNotifier {
 
   int _getLineNumber(String text, int position) {
     return text.substring(0, position).split('\n').length - 1;
+  }
+
+  /// Generate a unique identifier for a scene based on its position in the document
+  String _generateSceneId(String fullText, int cursorPosition) {
+    final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
+    final chapterMatches = chapterPattern.allMatches(fullText).toList();
+    final sceneBreakPattern = RegExp(r'\n\s*\n\s*\n');
+
+    if (chapterMatches.isEmpty) {
+      // No chapters - count scene number
+      final sceneBreaks = sceneBreakPattern.allMatches(fullText).toList();
+
+      if (sceneBreaks.isEmpty) {
+        return 'scene_1';
+      }
+
+      final boundaries = <int>[0];
+      for (final match in sceneBreaks) {
+        boundaries.add(match.end);
+      }
+      boundaries.add(fullText.length);
+
+      for (int i = 0; i < boundaries.length - 1; i++) {
+        if (cursorPosition >= boundaries[i] && cursorPosition < boundaries[i + 1]) {
+          return 'scene_${i + 1}';
+        }
+      }
+      return 'scene_1';
+    } else {
+      // Has chapters - find chapter and scene within chapter
+      for (int chapterIdx = 0; chapterIdx < chapterMatches.length; chapterIdx++) {
+        final chapterMatch = chapterMatches[chapterIdx];
+        final chapterStart = chapterMatch.start;
+        final chapterEnd = chapterIdx < chapterMatches.length - 1
+            ? chapterMatches[chapterIdx + 1].start
+            : fullText.length;
+
+        if (cursorPosition >= chapterStart && cursorPosition < chapterEnd) {
+          final chapterNumber = chapterMatch.group(1);
+
+          // Get chapter content (excluding chapter heading)
+          final chapterHeadingEnd = fullText.indexOf('\n', chapterStart);
+          final chapterContentStart = chapterHeadingEnd != -1 ? chapterHeadingEnd + 1 : chapterStart;
+          final chapterContent = fullText.substring(chapterContentStart, chapterEnd);
+
+          // Find scene breaks within this chapter
+          final scenesInChapter = sceneBreakPattern.allMatches(chapterContent).toList();
+
+          if (scenesInChapter.isEmpty) {
+            return 'ch${chapterNumber}_scene_1';
+          }
+
+          final sceneBoundaries = <int>[0];
+          for (final match in scenesInChapter) {
+            sceneBoundaries.add(match.end);
+          }
+          sceneBoundaries.add(chapterContent.length);
+
+          final relativeCursorPos = cursorPosition - chapterContentStart;
+
+          for (int i = 0; i < sceneBoundaries.length - 1; i++) {
+            if (relativeCursorPos >= sceneBoundaries[i] && relativeCursorPos < sceneBoundaries[i + 1]) {
+              return 'ch${chapterNumber}_scene_${i + 1}';
+            }
+          }
+
+          return 'ch${chapterNumber}_scene_1';
+        }
+      }
+    }
+
+    return 'scene_1';
+  }
+
+  /// Set the current document path and load saved analyses
+  Future<void> setDocumentPath(String? filePath) async {
+    if (_currentDocumentPath == filePath) return;
+
+    _currentDocumentPath = filePath;
+    _sceneAnalyses.clear();
+    _currentAnalysis = null;
+    _currentSceneId = null;
+
+    if (filePath != null && filePath.isNotEmpty) {
+      await _loadSceneAnalyses();
+    }
+
+    notifyListeners();
+  }
+
+  /// Get the storage file path for scene analyses
+  String? _getStorageFilePath() {
+    if (_currentDocumentPath == null || _currentDocumentPath!.isEmpty) {
+      return null;
+    }
+
+    final docDir = path.dirname(_currentDocumentPath!);
+    final docName = path.basenameWithoutExtension(_currentDocumentPath!);
+    final storageDir = path.join(docDir, '.justwrite');
+
+    return path.join(storageDir, '${docName}_scene_analyses.json');
+  }
+
+  /// Load scene analyses from disk
+  Future<void> _loadSceneAnalyses() async {
+    final storagePath = _getStorageFilePath();
+    if (storagePath == null) return;
+
+    try {
+      final file = File(storagePath);
+      if (await file.exists()) {
+        final jsonString = await file.readAsString();
+        final jsonData = jsonDecode(jsonString) as Map<String, dynamic>;
+
+        _sceneAnalyses.clear();
+        jsonData.forEach((sceneId, analysisJson) {
+          try {
+            _sceneAnalyses[sceneId] = SceneAnalysis.fromJson(analysisJson as Map<String, dynamic>);
+          } catch (e) {
+            debugPrint('Error loading analysis for scene $sceneId: $e');
+          }
+        });
+
+        debugPrint('Loaded ${_sceneAnalyses.length} scene analyses from $storagePath');
+      }
+    } catch (e) {
+      debugPrint('Error loading scene analyses: $e');
+    }
+  }
+
+  /// Save scene analyses to disk
+  Future<void> _saveSceneAnalyses() async {
+    final storagePath = _getStorageFilePath();
+    if (storagePath == null) return;
+
+    try {
+      final file = File(storagePath);
+      final storageDir = file.parent;
+
+      // Create .justwrite directory if it doesn't exist
+      if (!await storageDir.exists()) {
+        await storageDir.create(recursive: true);
+      }
+
+      // Convert all scene analyses to JSON
+      final jsonData = <String, dynamic>{};
+      _sceneAnalyses.forEach((sceneId, analysis) {
+        jsonData[sceneId] = analysis.toJson();
+      });
+
+      // Write to file
+      await file.writeAsString(jsonEncode(jsonData));
+      debugPrint('Saved ${_sceneAnalyses.length} scene analyses to $storagePath');
+    } catch (e) {
+      debugPrint('Error saving scene analyses: $e');
+    }
+  }
+
+  /// Load cached analysis for a specific scene
+  void loadSceneAnalysis(String fullText, int cursorPosition) {
+    final sceneId = _generateSceneId(fullText, cursorPosition);
+
+    if (_currentSceneId == sceneId && _currentAnalysis != null) {
+      // Already showing this scene's analysis
+      return;
+    }
+
+    _currentSceneId = sceneId;
+
+    if (_sceneAnalyses.containsKey(sceneId)) {
+      _currentAnalysis = _sceneAnalyses[sceneId];
+      _error = null;
+      debugPrint('Loaded cached analysis for $sceneId');
+      notifyListeners();
+    } else {
+      // No cached analysis for this scene
+      _currentAnalysis = null;
+      _error = null;
+      debugPrint('No cached analysis found for $sceneId');
+      notifyListeners();
+    }
   }
 }

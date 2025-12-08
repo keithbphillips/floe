@@ -63,10 +63,13 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
       // Try to load the last opened file
       await docProvider.loadLastFile();
 
-      // Load plot threads for the loaded document
+      // Load plot threads and scene analyses for the loaded document
       if (context.mounted) {
         final plotThreads = context.read<PlotThreadProvider>();
         await plotThreads.setDocumentPath(docProvider.filePath);
+
+        final sceneAnalyzer = context.read<SceneAnalyzerProvider>();
+        await sceneAnalyzer.setDocumentPath(docProvider.filePath);
       }
 
       // Update controller if content was loaded
@@ -79,8 +82,12 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
 
       _focusNode.requestFocus();
 
-      // Initial analysis if there's content
-      if (_controller.text.trim().isNotEmpty) {
+      // Load cached scene analysis for the current position if there's content
+      if (_controller.text.trim().isNotEmpty && context.mounted) {
+        final sceneAnalyzer = context.read<SceneAnalyzerProvider>();
+        sceneAnalyzer.loadSceneAnalysis(docProvider.content, 0);
+
+        // Initial analysis if there's content
         _checkAndAnalyze();
       }
     });
@@ -99,6 +106,11 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
         setState(() {
           _currentCursorPosition = newCursorPos;
         });
+
+        // Load cached analysis for the new scene position
+        final document = context.read<DocumentProvider>();
+        final analyzer = context.read<SceneAnalyzerProvider>();
+        analyzer.loadSceneAnalysis(document.content, newCursorPos);
       }
     });
   }
@@ -504,6 +516,13 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
       debugPrint('File loaded, content length: ${document.content.length}');
       debugPrint('Content preview: ${document.content.substring(0, document.content.length > 100 ? 100 : document.content.length)}');
 
+      // Load plot threads and scene analyses for the newly loaded document
+      final plotThreads = context.read<PlotThreadProvider>();
+      await plotThreads.setDocumentPath(document.filePath);
+
+      final sceneAnalyzer = context.read<SceneAnalyzerProvider>();
+      await sceneAnalyzer.setDocumentPath(document.filePath);
+
       // Update controller with new value and set cursor to start
       _controller.value = TextEditingValue(
         text: document.content,
@@ -511,6 +530,9 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
       );
 
       debugPrint('Controller updated, text length: ${_controller.text.length}');
+
+      // Load the scene analysis for the first scene
+      sceneAnalyzer.loadSceneAnalysis(document.content, 0);
 
       // Trigger rebuild
       setState(() {});
@@ -624,8 +646,13 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
       // Get existing plot thread titles to help AI avoid duplicates
       final existingThreadTitles = plotThreads.threads.map((t) => t.title).toList();
 
-      // Start analysis
-      analyzer.analyzeScene(sceneText, existingPlotThreads: existingThreadTitles);
+      // Start analysis with full text and cursor position for storage
+      analyzer.analyzeScene(
+        sceneText,
+        existingPlotThreads: existingThreadTitles,
+        fullText: document.content,
+        cursorPosition: cursorPosition,
+      );
 
       // Update tracking variables
       _lastAnalyzedWordCount = document.wordCount;

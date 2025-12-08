@@ -26,6 +26,7 @@ class PlotThread {
   final List<int> sceneAppearances; // All scenes where this thread appears
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? aiSummary; // AI-generated narrative summary of how this thread develops
 
   const PlotThread({
     required this.id,
@@ -38,6 +39,7 @@ class PlotThread {
     required this.sceneAppearances,
     required this.createdAt,
     required this.updatedAt,
+    this.aiSummary,
   });
 
   PlotThread copyWith({
@@ -51,6 +53,7 @@ class PlotThread {
     List<int>? sceneAppearances,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? aiSummary,
   }) {
     return PlotThread(
       id: id ?? this.id,
@@ -63,6 +66,7 @@ class PlotThread {
       sceneAppearances: sceneAppearances ?? this.sceneAppearances,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      aiSummary: aiSummary ?? this.aiSummary,
     );
   }
 
@@ -78,6 +82,7 @@ class PlotThread {
       'sceneAppearances': sceneAppearances,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      'aiSummary': aiSummary,
     };
   }
 
@@ -99,6 +104,7 @@ class PlotThread {
       sceneAppearances: List<int>.from(json['sceneAppearances']),
       createdAt: DateTime.parse(json['createdAt']),
       updatedAt: DateTime.parse(json['updatedAt']),
+      aiSummary: json['aiSummary'] as String?,
     );
   }
 
