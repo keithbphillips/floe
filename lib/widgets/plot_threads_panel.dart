@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/plot_thread_provider.dart';
 import '../providers/scene_analyzer_provider.dart';
 import '../providers/app_settings_provider.dart';
+import '../providers/document_provider.dart';
 import '../models/plot_thread.dart';
 import '../services/openai_service.dart';
 import '../services/ollama_service.dart';
@@ -66,6 +67,16 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
                 ),
               ),
               const SizedBox(width: 12),
+              // Analyze document button (main action)
+              IconButton(
+                icon: const Icon(Icons.auto_stories, size: 18),
+                tooltip: 'Analyze entire document for plot threads',
+                onPressed: () => _showAnalyzeDocumentDialog(context, threadProvider),
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(),
+                color: theme.primaryColor,
+              ),
+              const SizedBox(width: 4),
               // Consolidate threads button (AI cleanup)
               if (threadProvider.threads.length > 3)
                 IconButton(
@@ -335,23 +346,44 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
   ) {
     final provider = context.read<PlotThreadProvider>();
 
-    return Container(
-      margin: const EdgeInsets.only(left: 48, right: 16, bottom: 1),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isAbandoned
-            ? Colors.orange.withOpacity(0.08)
-            : isResolved
-                ? (isDark ? Colors.grey[850] : Colors.grey[50])
-                : (isDark ? Colors.grey[800]!.withOpacity(0.5) : Colors.white),
-        border: Border(
-          left: BorderSide(
-            color: _getTypeInfo(thread.type)['color'] as Color,
-            width: 3,
+    // Parse location info from description
+    String displayDescription = thread.description;
+    String? startsAt;
+    String? endsAt;
+
+    if (thread.description.contains('___LOCATION___')) {
+      final parts = thread.description.split('___LOCATION___');
+      displayDescription = parts[0];
+      if (parts.length > 1) {
+        final locationParts = parts[1].split('|||');
+        if (locationParts.isNotEmpty && locationParts[0].isNotEmpty) {
+          startsAt = locationParts[0];
+        }
+        if (locationParts.length > 1 && locationParts[1].isNotEmpty) {
+          endsAt = locationParts[1];
+        }
+      }
+    }
+
+    return InkWell(
+      onTap: () => _showThreadDetailsDialog(context, thread, provider),
+      child: Container(
+        margin: const EdgeInsets.only(left: 48, right: 16, bottom: 1),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isAbandoned
+              ? Colors.orange.withOpacity(0.08)
+              : isResolved
+                  ? (isDark ? Colors.grey[850] : Colors.grey[50])
+                  : (isDark ? Colors.grey[800]!.withOpacity(0.5) : Colors.white),
+          border: Border(
+            left: BorderSide(
+              color: _getTypeInfo(thread.type)['color'] as Color,
+              width: 3,
+            ),
           ),
         ),
-      ),
-      child: Column(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title
@@ -366,10 +398,10 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
           ),
 
           // Description
-          if (thread.description.isNotEmpty) ...[
+          if (displayDescription.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
-              thread.description,
+              displayDescription,
               style: theme.textTheme.bodySmall?.copyWith(
                 fontSize: 11,
                 color: isDark ? Colors.white60 : Colors.black54,
@@ -384,16 +416,26 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
             spacing: 12,
             runSpacing: 4,
             children: [
-              _buildMetadataChip(
-                Icons.bookmark_outline,
-                'Scene ${thread.introducedAtScene}',
-                theme,
-              ),
-              _buildMetadataChip(
-                Icons.update,
-                '${thread.sceneAppearances.length} mentions',
-                theme,
-              ),
+              if (startsAt != null)
+                _buildMetadataChip(
+                  Icons.play_arrow,
+                  'Starts: $startsAt',
+                  theme,
+                  color: Colors.green[700],
+                ),
+              if (endsAt != null)
+                _buildMetadataChip(
+                  endsAt.toLowerCase() == 'ongoing' ? Icons.trending_flat : Icons.check_circle_outline,
+                  endsAt.toLowerCase() == 'ongoing' ? 'Ongoing' : 'Ends: $endsAt',
+                  theme,
+                  color: endsAt.toLowerCase() == 'ongoing' ? Colors.blue[700] : Colors.grey[700],
+                ),
+              if (startsAt == null && endsAt == null)
+                _buildMetadataChip(
+                  Icons.bookmark_outline,
+                  'Document',
+                  theme,
+                ),
               if (isAbandoned)
                 _buildMetadataChip(
                   Icons.warning_amber,
@@ -404,6 +446,7 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
             ],
           ),
         ],
+        ),
       ),
     );
   }
@@ -500,7 +543,7 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Text(
-            'Plot threads will appear as you write and analyze scenes',
+            'Click the book icon above to analyze your document for plot threads',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: Colors.grey[600],
@@ -662,5 +705,383 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
         );
       }
     }
+  }
+
+  Future<void> _showThreadDetailsDialog(
+    BuildContext context,
+    PlotThread thread,
+    PlotThreadProvider provider,
+  ) async {
+    final theme = Theme.of(context);
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              _getTypeInfo(thread.type)['icon'] as IconData,
+              color: _getTypeInfo(thread.type)['color'] as Color,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                thread.title,
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Description
+              if (thread.description.isNotEmpty) ...[
+                Text(
+                  thread.description.split('___LOCATION___')[0],
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // Status section
+              Text(
+                'Status',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Status buttons
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _StatusChip(
+                    label: 'Introduced',
+                    icon: Icons.fiber_new,
+                    isSelected: thread.status == PlotThreadStatus.introduced,
+                    onTap: () {
+                      provider.updateThreadStatus(thread.id, PlotThreadStatus.introduced);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                  _StatusChip(
+                    label: 'Developing',
+                    icon: Icons.trending_up,
+                    isSelected: thread.status == PlotThreadStatus.developing,
+                    onTap: () {
+                      provider.updateThreadStatus(thread.id, PlotThreadStatus.developing);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                  _StatusChip(
+                    label: 'Resolved',
+                    icon: Icons.check_circle,
+                    isSelected: thread.status == PlotThreadStatus.resolved,
+                    onTap: () {
+                      provider.updateThreadStatus(thread.id, PlotThreadStatus.resolved);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                  _StatusChip(
+                    label: 'Abandoned',
+                    icon: Icons.cancel,
+                    isSelected: thread.status == PlotThreadStatus.abandoned,
+                    onTap: () {
+                      provider.updateThreadStatus(thread.id, PlotThreadStatus.abandoned);
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // Thread info
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _InfoRow('Type', _getTypeInfo(thread.type)['label'] as String),
+                    const SizedBox(height: 4),
+                    _InfoRow('Introduced', 'Chapter ${thread.introducedAtScene}'),
+                    const SizedBox(height: 4),
+                    _InfoRow('Last mentioned', 'Chapter ${thread.lastMentionedAtScene}'),
+                    const SizedBox(height: 4),
+                    _InfoRow('Appearances', '${thread.sceneAppearances.length} chapters'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Delete Thread'),
+                  content: Text('Are you sure you want to delete "${thread.title}"?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirmed == true && context.mounted) {
+                await provider.deleteThread(thread.id);
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAnalyzeDocumentDialog(
+    BuildContext context,
+    PlotThreadProvider provider,
+  ) async {
+    final documentProvider = context.read<DocumentProvider>();
+    final wordCount = documentProvider.content.trim().split(RegExp(r'\s+')).length;
+
+    if (wordCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Document is empty'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.auto_stories, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Analyze Document'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'The AI will analyze your entire document ($wordCount words) to identify major plot threads.',
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 12),
+            const Text('This will:'),
+            const Text('• Identify 8-15 major plot threads across the full manuscript'),
+            const Text('• Replace any existing threads with the new analysis'),
+            const Text('• Focus on threads that span multiple scenes/chapters'),
+            const SizedBox(height: 12),
+            Text(
+              'This may take 30-90 seconds depending on document length.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.auto_stories, size: 18),
+            label: const Text('Analyze'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Expanded(
+                child: Text('AI is analyzing full document for plot threads...\nThis may take 30-90 seconds.'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      try {
+        // Get AI service based on current settings
+        final settings = context.read<AppSettingsProvider>();
+        final aiService = settings.aiProvider == 'openai'
+            ? OpenAiService(
+                apiKey: settings.openAiApiKey,
+                model: settings.openAiModel,
+              )
+            : OllamaService(
+                model: settings.ollamaModel,
+              );
+
+        final result = await provider.analyzeDocumentThreads(
+          documentProvider.content,
+          aiService,
+        );
+
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Close loading dialog
+
+          if (result['success'] == true) {
+            final threadsFound = result['threadsFound'] ?? 0;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Analysis complete: $threadsFound plot threads identified',
+                ),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          } else {
+            final error = result['error'] ?? 'Unknown error';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Analysis failed: $error'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Analysis failed: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+}
+
+// Helper widget for status chips
+class _StatusChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _StatusChip({
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue.withOpacity(0.2) : Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? Colors.blue : Colors.grey.withOpacity(0.3),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.blue : Colors.grey[600],
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                color: isSelected ? Colors.blue : Colors.grey[700],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Helper widget for info rows
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _InfoRow(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
   }
 }

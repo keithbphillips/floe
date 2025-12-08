@@ -5,6 +5,8 @@ import '../providers/document_provider.dart';
 import '../providers/app_settings_provider.dart';
 import '../providers/plot_thread_provider.dart';
 import '../models/scene_analysis.dart';
+import '../services/openai_service.dart';
+import '../services/ollama_service.dart';
 
 class SceneInfoPanel extends StatefulWidget {
   final VoidCallback onClose;
@@ -50,20 +52,8 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
         _lastAnalyzedSceneStart = sceneStart;
       }
 
-      // Process plot threads if this is a new analysis (use timestamp to identify unique analyses)
-      final currentAnalysisTime = analyzer.currentAnalysis!.analyzedAt;
-      if (_lastProcessedAnalysisTime != currentAnalysisTime) {
-        _lastProcessedAnalysisTime = currentAnalysisTime;
-        final threads = analyzer.currentAnalysis!.plotThreads;
-        if (threads.isNotEmpty) {
-          final analysisId = currentAnalysisTime.toIso8601String();
-          debugPrint('SceneInfoPanel: Processing ${threads.length} threads from analysis at $analysisId');
-          // Process threads asynchronously to avoid blocking UI
-          Future.microtask(() {
-            context.read<PlotThreadProvider>().processSceneThreads(threads, analysisId: analysisId);
-          });
-        }
-      }
+      // Note: Plot thread processing has been moved to on-demand document-level analysis
+      // Scene-by-scene plot thread detection has been removed
     }
 
     return Column(
@@ -659,6 +649,51 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
       return '${diff.inHours}h ago';
     } else {
       return '${diff.inDays}d ago';
+    }
+  }
+
+  /// Automatically consolidate plot threads after scene analysis
+  Future<void> _autoConsolidateThreads(BuildContext context) async {
+    try {
+      final settings = context.read<AppSettingsProvider>();
+      final analyzer = context.read<SceneAnalyzerProvider>();
+      final provider = context.read<PlotThreadProvider>();
+
+      // Skip if no AI available
+      if (!analyzer.aiAvailable) {
+        debugPrint('Skipping auto-consolidation: AI not available');
+        return;
+      }
+
+      // Skip if no threads to consolidate
+      if (provider.threads.isEmpty) {
+        debugPrint('Skipping auto-consolidation: No threads');
+        return;
+      }
+
+      // Get AI service based on current settings
+      final aiService = settings.aiProvider == 'openai'
+          ? OpenAiService(
+              apiKey: settings.openAiApiKey,
+              model: settings.openAiModel,
+            )
+          : OllamaService(
+              model: settings.ollamaModel,
+            );
+
+      // Run consolidation
+      final result = await provider.consolidateThreadsWithAI(aiService);
+
+      final removed = result['removed'] ?? 0;
+      final merged = result['merged'] ?? 0;
+
+      // Only log if changes were made
+      if (removed > 0 || merged > 0) {
+        debugPrint('Auto-consolidation complete: $removed removed, $merged merged');
+      }
+    } catch (e) {
+      debugPrint('Auto-consolidation failed: $e');
+      // Silently fail - don't interrupt the user's workflow
     }
   }
 }

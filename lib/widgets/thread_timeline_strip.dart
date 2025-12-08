@@ -295,86 +295,37 @@ class _ThreadTimelineStripState extends State<ThreadTimelineStrip> {
             // Timeline visualization (synced with bubble scroll)
             Expanded(
               child: ClipRect(
-                child: Transform.translate(
-                  offset: Offset(-scrollOffset, 0),
-                  child: _buildThreadTimeline(thread, typeColor, theme, isDark),
+                child: GestureDetector(
+                  onTapUp: (details) {
+                    // Calculate which scene was clicked
+                    final sceneWidth = 40.0;
+                    final totalWidth = widget.totalScenes * sceneWidth;
+                    final clickX = details.localPosition.dx + scrollOffset;
+                    final clickedScene = (clickX / sceneWidth).round().clamp(1, widget.totalScenes);
+
+                    // Check if clicked scene is in this thread's appearances
+                    if (thread.sceneAppearances.contains(clickedScene)) {
+                      widget.onSceneClick?.call(clickedScene - 1); // Convert to 0-based index
+                    }
+                  },
+                  child: SizedBox(
+                    height: 20,
+                    child: CustomPaint(
+                      painter: _ThreadTimelinePainter(
+                        thread: thread,
+                        threadColor: typeColor,
+                        scrollOffset: scrollOffset,
+                        totalScenes: widget.totalScenes,
+                        currentSceneIndex: widget.currentSceneIndex,
+                      ),
+                      child: Container(), // Force the painter to fill available space
+                    ),
+                  ),
                 ),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildThreadTimeline(
-    PlotThread thread,
-    Color threadColor,
-    ThemeData theme,
-    bool isDark,
-  ) {
-    final maxScene = widget.totalScenes > 0 ? widget.totalScenes : 1;
-
-    // Calculate width based on number of scenes
-    // Each scene needs about 40px (similar to bubble chart spacing)
-    final width = maxScene * 40.0;
-
-    return SizedBox(
-      height: 20,
-      width: width,
-      child: Stack(
-        children: [
-          // Background bar (full thread lifecycle)
-          Positioned(
-            left: (thread.introducedAtScene / maxScene) * width,
-            right: width - ((thread.lastMentionedAtScene + 1) / maxScene) * width,
-            top: 8,
-            bottom: 8,
-            child: Container(
-              decoration: BoxDecoration(
-                color: threadColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-
-          // Scene appearance markers
-          ...thread.sceneAppearances.map((sceneNumber) {
-            final position = (sceneNumber / maxScene) * width;
-            final isCurrentScene = sceneNumber == widget.currentSceneIndex + 1;
-
-            return Positioned(
-              left: position - 3,
-              top: 5,
-              child: Container(
-                width: 6,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: isCurrentScene
-                      ? threadColor
-                      : threadColor.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(3),
-                  border: isCurrentScene
-                      ? Border.all(color: threadColor, width: 1.5)
-                      : null,
-                ),
-              ),
-            );
-          }),
-
-          // Current scene indicator (vertical line)
-          if (widget.totalScenes > 0) ...[
-            Positioned(
-              left: ((widget.currentSceneIndex + 1) / maxScene) * width - 0.5,
-              top: 0,
-              bottom: 0,
-              child: Container(
-                width: 1,
-                color: theme.primaryColor.withOpacity(0.3),
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }
@@ -396,5 +347,128 @@ class _ThreadTimelineStripState extends State<ThreadTimelineStrip> {
       default:
         return Colors.grey;
     }
+  }
+}
+
+/// Custom painter that draws the thread timeline without clipping issues
+class _ThreadTimelinePainter extends CustomPainter {
+  final PlotThread thread;
+  final Color threadColor;
+  final double scrollOffset;
+  final int totalScenes;
+  final int currentSceneIndex;
+
+  _ThreadTimelinePainter({
+    required this.thread,
+    required this.threadColor,
+    required this.scrollOffset,
+    required this.totalScenes,
+    required this.currentSceneIndex,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final maxScene = totalScenes > 0 ? totalScenes : 1;
+    final sceneWidth = 40.0; // Match bubble chart spacing
+    final totalWidth = maxScene * sceneWidth;
+
+    // Debug: Log thread info for first render
+    if (scrollOffset == 0 && thread.title.contains('Shadow')) {
+      print('Drawing timeline for: ${thread.title}');
+      print('  introducedAtScene: ${thread.introducedAtScene}');
+      print('  lastMentionedAtScene: ${thread.lastMentionedAtScene}');
+      print('  sceneAppearances: ${thread.sceneAppearances}');
+      print('  totalScenes: $totalScenes');
+    }
+
+    // Only clip vertically, not horizontally
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(-scrollOffset, 0, totalWidth + scrollOffset, size.height));
+
+    // Translate for scroll
+    canvas.translate(-scrollOffset, 0);
+
+    // Find the earliest and latest appearance in scene list
+    int firstAppearance = thread.introducedAtScene > 0 ? thread.introducedAtScene : 1;
+    int lastAppearance = thread.lastMentionedAtScene > 0 ? thread.lastMentionedAtScene : firstAppearance;
+
+    if (thread.sceneAppearances.isNotEmpty) {
+      firstAppearance = thread.sceneAppearances.reduce((a, b) => a < b ? a : b);
+      lastAppearance = thread.sceneAppearances.reduce((a, b) => a > b ? a : b);
+    }
+
+    // Draw horizontal line spanning from first to last appearance
+    final lineStartX = (firstAppearance / maxScene) * totalWidth;
+    final lineEndX = ((lastAppearance + 1) / maxScene) * totalWidth;
+
+    final linePaint = Paint()
+      ..color = threadColor.withOpacity(0.3)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(
+      Offset(lineStartX, size.height / 2),
+      Offset(lineEndX, size.height / 2),
+      linePaint,
+    );
+
+    // Draw light background bar
+    final barPaint = Paint()
+      ..color = threadColor.withOpacity(0.1)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTRB(lineStartX, 8, lineEndX, size.height - 8),
+        const Radius.circular(2),
+      ),
+      barPaint,
+    );
+
+    // Draw dots at each appearance
+    final dotPaint = Paint()
+      ..style = PaintingStyle.fill;
+
+    for (final sceneNumber in thread.sceneAppearances) {
+      final position = (sceneNumber / maxScene) * totalWidth;
+      final isCurrentScene = sceneNumber == currentSceneIndex + 1;
+
+      // Only draw if within reasonable range of visible area
+      if (position >= scrollOffset - 100 && position <= scrollOffset + size.width + 100) {
+        dotPaint.color = isCurrentScene
+            ? threadColor
+            : threadColor.withOpacity(0.7);
+
+        // Draw dot
+        canvas.drawCircle(
+          Offset(position, size.height / 2),
+          isCurrentScene ? 5 : 4,
+          dotPaint,
+        );
+
+        // Draw border for current scene
+        if (isCurrentScene) {
+          final borderPaint = Paint()
+            ..color = threadColor
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2;
+
+          canvas.drawCircle(
+            Offset(position, size.height / 2),
+            6,
+            borderPaint,
+          );
+        }
+      }
+    }
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_ThreadTimelinePainter oldDelegate) {
+    return oldDelegate.scrollOffset != scrollOffset ||
+        oldDelegate.currentSceneIndex != currentSceneIndex ||
+        oldDelegate.thread != thread;
   }
 }

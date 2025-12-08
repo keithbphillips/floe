@@ -104,25 +104,13 @@ ANALYSIS INSTRUCTIONS:
    - Maximum 8 echo words
    - If no true echo words exist, return empty array
 
-3. plot_threads: Identify ONLY plot threads in THIS scene
-   - "introduced": New goal, conflict, question, or mystery
-   - "advanced": Progress, complication, or revelation
-   - "resolved": Goal achieved, conflict resolved, question answered
-   - Types: main_plot, subplot, character_arc, mystery, conflict, relationship, other
-   - 1-3 most important threads only
-   - Empty array if purely transitional scene
+3. structure: Evaluate if scene has clear story arc. Identify which beats are present: inciting incident, turning point, crisis, climax, resolution. Keep brief (2-3 sentences max).
 
-   CRITICAL: Each thread MUST have a UNIQUE, SPECIFIC title that describes THAT PARTICULAR thread.
-   - ✓ GOOD: "Michelle's Childhood Trauma", "Uncle Bill's Warning", "Journey to Vancouver"
-   - ✗ BAD: "Fire in the Home", "Fire in the Home", "Fire in the Home" (same title repeated)
-   - Each thread is a SEPARATE story element and needs its OWN distinct title
-   - If you identify multiple threads, they MUST have DIFFERENT titles
+4. hunches: 2-3 brief observations about pacing, clarity, emotional resonance, missing elements, or opportunities.
 
-4. structure: Evaluate if scene has clear story arc. Identify which beats are present: inciting incident, turning point, crisis, climax, resolution. Keep brief (2-3 sentences max).
+5. senses: Use only these values: sight, sound, touch, taste, smell
 
-5. hunches: 2-3 brief observations about pacing, clarity, emotional resonance, missing elements, or opportunities.
-
-6. senses: Use only these values: sight, sound, touch, taste, smell''';
+NOTE: Plot thread analysis is now done separately at the document level, not per-scene.''';
   }
 
   /// Get the JSON schema for scene analysis
@@ -185,35 +173,6 @@ ANALYSIS INSTRUCTIONS:
           "type": "array",
           "description": "2-3 brief suggestions or observations about the scene",
           "items": {"type": "string"}
-        },
-        "plot_threads": {
-          "type": "array",
-          "description": "Plot threads that appear in this scene",
-          "items": {
-            "type": "object",
-            "properties": {
-              "title": {
-                "type": "string",
-                "description": "Brief title for the plot thread (3-5 words)"
-              },
-              "description": {
-                "type": "string",
-                "description": "What happens with this thread in this scene (1-2 sentences)"
-              },
-              "action": {
-                "type": "string",
-                "enum": ["introduced", "advanced", "resolved"],
-                "description": "How this thread is affected"
-              },
-              "type": {
-                "type": "string",
-                "enum": ["main_plot", "subplot", "character_arc", "mystery", "conflict", "relationship", "other"],
-                "description": "Type of plot thread"
-              }
-            },
-            "required": ["title", "description", "action", "type"],
-            "additionalProperties": false
-          }
         }
       },
       "required": [
@@ -228,9 +187,162 @@ ANALYSIS INSTRUCTIONS:
         "senses",
         "stakes",
         "structure",
-        "hunches",
-        "plot_threads"
+        "hunches"
       ],
+      "additionalProperties": false
+    };
+  }
+
+  /// Analyze entire document for plot threads
+  @override
+  Future<List<Map<String, dynamic>>?> analyzeDocumentForPlotThreads(String fullText) async {
+    if (fullText.trim().isEmpty) return null;
+
+    final wordCount = fullText.trim().split(RegExp(r'\s+')).length;
+    debugPrint('=== Analyzing full document for plot threads ($wordCount words) ===');
+
+    try {
+      final prompt = _buildDocumentThreadsPrompt(fullText, wordCount);
+      final schema = _getDocumentThreadsSchema();
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/generate'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'model': model,
+          'prompt': prompt,
+          'stream': false,
+          'format': schema,
+          'options': {
+            'temperature': 0.0,
+            'num_predict': 3000,
+          },
+        }),
+      ).timeout(const Duration(seconds: 180));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final analysisText = data['response'] as String;
+
+        try {
+          final parsedResult = json.decode(analysisText) as Map<String, dynamic>;
+          debugPrint('Ollama document thread analysis completed successfully');
+
+          // Safely cast the list
+          final threadsList = parsedResult['plot_threads'] as List<dynamic>?;
+          if (threadsList == null) {
+            debugPrint('No plot_threads field in response');
+            return null;
+          }
+
+          // Convert to List<Map<String, dynamic>>
+          return threadsList.map((item) => item as Map<String, dynamic>).toList();
+        } catch (e) {
+          debugPrint('Failed to parse Ollama document thread output: $e');
+          debugPrint('Response was: $analysisText');
+          return null;
+        }
+      }
+    } catch (e) {
+      debugPrint('Document thread analysis error: $e');
+    }
+
+    return null;
+  }
+
+  /// Build prompt for full document thread analysis
+  String _buildDocumentThreadsPrompt(String fullText, int wordCount) {
+    return '''You are an editorial assistant analyzing plot structure. Analyze this entire literary fiction manuscript and identify ALL major plot threads that span multiple scenes or chapters.
+
+DOCUMENT TEXT ($wordCount words):
+"""
+$fullText
+"""
+
+YOUR TASK:
+Identify the major ongoing plot threads in this document. Focus on:
+- Main plot lines that drive the narrative forward
+- Character arcs that develop over multiple scenes
+- Subplots that recur throughout the story
+- Mysteries or questions that are introduced and developed
+- Conflicts that persist across scenes
+- Relationships that evolve over time
+
+IMPORTANT GUIDELINES:
+- Each thread MUST appear in multiple scenes/chapters (not just one-off events)
+- Each thread MUST have a UNIQUE, SPECIFIC title
+- Limit to 8-15 most significant threads (don't list every minor detail)
+- NOT a thread: Single events, descriptions, settings, or background information that don't carry forward
+- Provide a clear description of how each thread develops across the document
+- Classify each thread's current status: introduced, developing, or resolved
+- Types: main_plot, subplot, character_arc, mystery, conflict, relationship, other
+
+CRITICAL: For each thread, carefully identify WHERE it appears:
+- starts_at: The EXACT chapter number where this thread is FIRST introduced (e.g., "1", "5", "7"). Read carefully through the text to find the FIRST mention of this character/event. DO NOT guess or assume - if Todd doesn't appear until Chapter 7, write "7" not "1"
+- ends_at: The LAST chapter number where this thread is mentioned or relevant. If the thread is resolved (conflict ends, question answered, arc completes), use that chapter number. Only use "ongoing" if the thread is still unresolved AND appears in the final chapter.
+- chapters: A list of ALL chapter numbers where this thread appears or is mentioned (e.g., [7, 8, 10, 11, 12]). Include every chapter where the thread is relevant. If a thread appears in chapters 7, 8, 10, don't include 9 if it's not mentioned there.
+
+IMPORTANT:
+- Look for "Chapter X" markers in the text to identify chapter boundaries
+- Track which chapters each thread actually appears in by reading carefully
+- For ends_at: Use the ACTUAL last chapter where mentioned, not the document's last chapter
+- A thread that resolves in Chapter 10 should have ends_at="10", NOT "ongoing" or the last chapter
+- Be PRECISE - base your answer on what you actually read, not assumptions
+
+Focus on threads that have narrative momentum and contribute to the story's structure.''';
+  }
+
+  /// Get JSON schema for document thread analysis
+  Map<String, dynamic> _getDocumentThreadsSchema() {
+    return {
+      "type": "object",
+      "properties": {
+        "plot_threads": {
+          "type": "array",
+          "description": "Major plot threads found across the entire document",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "Brief, unique title for the plot thread (3-6 words)"
+              },
+              "description": {
+                "type": "string",
+                "description": "How this thread develops across the document (2-3 sentences)"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["introduced", "developing", "resolved"],
+                "description": "Current status of this thread"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["main_plot", "subplot", "character_arc", "mystery", "conflict", "relationship", "other"],
+                "description": "Type of plot thread"
+              },
+              "starts_at": {
+                "type": "string",
+                "description": "Chapter number where this thread begins (e.g., '1', '5', '7')"
+              },
+              "ends_at": {
+                "type": "string",
+                "description": "Chapter number where resolved, or 'ongoing'"
+              },
+              "chapters": {
+                "type": "array",
+                "description": "List of all chapter numbers where this thread appears",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            },
+            "required": ["title", "description", "status", "type", "starts_at", "ends_at", "chapters"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["plot_threads"],
       "additionalProperties": false
     };
   }

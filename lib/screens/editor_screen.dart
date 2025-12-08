@@ -127,6 +127,31 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
     });
   }
 
+  /// Count total chapters in document
+  int _getTotalChapters(String content) {
+    final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
+    final matches = chapterPattern.allMatches(content);
+    return matches.isEmpty ? 1 : matches.length;
+  }
+
+  /// Navigate to a specific chapter in the document
+  void _navigateToChapter(String content, int chapterNumber) {
+    final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
+    final matches = chapterPattern.allMatches(content).toList();
+
+    if (matches.isEmpty || chapterNumber < 1 || chapterNumber > matches.length) {
+      return; // Invalid chapter number
+    }
+
+    // Get the position of the requested chapter (0-indexed)
+    final match = matches[chapterNumber - 1];
+    final position = match.start;
+
+    // Set selection and let TextField auto-scroll
+    _controller.selection = TextSelection.collapsed(offset: position);
+    _focusNode.requestFocus();
+  }
+
   @override
   void dispose() {
     windowManager.removeListener(this);
@@ -711,10 +736,14 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
                   // Thread timeline strip (above bubble chart)
                   if (!_isFullscreen)
                     ThreadTimelineStrip(
-                      totalScenes: context.watch<PlotThreadProvider>().currentSceneNumber,
+                      totalScenes: _getTotalChapters(document.content),
                       currentSceneIndex: context.watch<PlotThreadProvider>().currentSceneNumber - 1,
                       scrollController: _bubbleScrollController,
-                      onSceneClick: null, // Could implement scene navigation later
+                      onSceneClick: (sceneIndex) {
+                        // Navigate to the clicked chapter
+                        final chapterNumber = sceneIndex + 1; // Convert back to 1-based
+                        _navigateToChapter(document.content, chapterNumber);
+                      },
                       onThreadClick: (thread) {
                         // Switch to Plot Threads tab when a thread is clicked
                         setState(() {

@@ -289,6 +289,158 @@ class PlotThreadProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Analyze entire document for plot threads (on-demand)
+  /// Clears existing threads and replaces with AI-detected threads from full document
+  Future<Map<String, dynamic>> analyzeDocumentThreads(String fullDocumentText, dynamic aiService) async {
+    if (fullDocumentText.trim().isEmpty) {
+      return {'error': 'Empty document', 'threadsFound': 0};
+    }
+
+    debugPrint('=== Starting full document plot thread analysis ===');
+
+    try {
+      // Count total chapters in document
+      final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
+      final chapterMatches = chapterPattern.allMatches(fullDocumentText).toList();
+      final totalChapters = chapterMatches.isNotEmpty ? chapterMatches.length : 1;
+      debugPrint('Document has $totalChapters chapters');
+
+      // Call AI service to analyze full document
+      final threadsList = await aiService.analyzeDocumentForPlotThreads(fullDocumentText);
+
+      if (threadsList == null || threadsList.isEmpty) {
+        debugPrint('No threads found in document');
+        return {'error': 'No threads found', 'threadsFound': 0};
+      }
+
+      debugPrint('AI found ${threadsList.length} threads in document');
+
+      // Clear existing threads (we're replacing with fresh analysis)
+      _threads = [];
+      _currentSceneNumber = 1; // Reset scene counter
+
+      // Convert AI threads to PlotThread objects
+      for (final threadData in threadsList) {
+        final title = threadData['title'] as String;
+        final description = threadData['description'] as String;
+        final status = threadData['status'] as String;
+        final type = threadData['type'] as String;
+        final startsAt = threadData['starts_at'] as String?;
+        final endsAt = threadData['ends_at'] as String?;
+        final chaptersRaw = threadData['chapters'] as List<dynamic>?;
+
+        // Parse chapter numbers from AI
+        List<int> chapters = [];
+        if (chaptersRaw != null) {
+          chapters = chaptersRaw.map((c) => c is int ? c : int.tryParse(c.toString()) ?? 0).where((c) => c > 0).toList();
+        }
+
+        // Parse start/end chapters
+        int introducedAt = 0;
+        int lastMentioned = 0;
+
+        // Get start chapter
+        if (startsAt != null) {
+          final parsed = int.tryParse(startsAt.replaceAll(RegExp(r'[^0-9]'), ''));
+          if (parsed != null) {
+            introducedAt = parsed;
+          }
+        }
+
+        // Get end chapter - if "ongoing", use total chapters
+        bool isOngoing = false;
+        if (endsAt != null) {
+          if (endsAt.toLowerCase() == 'ongoing') {
+            lastMentioned = totalChapters;
+            isOngoing = true;
+          } else {
+            final parsed = int.tryParse(endsAt.replaceAll(RegExp(r'[^0-9]'), ''));
+            if (parsed != null) {
+              lastMentioned = parsed;
+            }
+          }
+        }
+
+        // If we have a chapters list from AI, use its start/end
+        if (chapters.isNotEmpty) {
+          chapters.sort();
+          if (introducedAt == 0) introducedAt = chapters.first;
+
+          // If marked "ongoing", extend chapters list to total chapters
+          if (isOngoing && chapters.last < totalChapters) {
+            lastMentioned = totalChapters;
+            // Fill in all chapters from the last one in the list to totalChapters
+            for (int i = chapters.last + 1; i <= totalChapters; i++) {
+              chapters.add(i);
+            }
+          } else {
+            lastMentioned = chapters.last;
+          }
+        } else {
+          // No chapters list from AI - generate from start to end
+          if (lastMentioned == 0) {
+            lastMentioned = introducedAt;
+          }
+
+          if (introducedAt > 0 && lastMentioned >= introducedAt) {
+            chapters = List.generate(lastMentioned - introducedAt + 1, (i) => introducedAt + i);
+          }
+        }
+
+        // Generate unique ID
+        final uniqueId = '${DateTime.now().millisecondsSinceEpoch}_${_threadIdCounter++}';
+
+        // Map status to PlotThreadStatus
+        PlotThreadStatus threadStatus;
+        if (status == 'resolved') {
+          threadStatus = PlotThreadStatus.resolved;
+        } else if (status == 'developing') {
+          threadStatus = PlotThreadStatus.developing;
+        } else {
+          threadStatus = PlotThreadStatus.introduced;
+        }
+
+        // Store location info in description with special markers for parsing
+        final locationMarker = '___LOCATION___';
+        final enhancedDescription = (startsAt != null || endsAt != null)
+            ? '$description$locationMarker${startsAt ?? ''}|||${endsAt ?? ''}'
+            : description;
+
+        final thread = PlotThread(
+          id: uniqueId,
+          title: title,
+          description: enhancedDescription,
+          type: _parseThreadType(type),
+          status: threadStatus,
+          introducedAtScene: introducedAt,
+          lastMentionedAtScene: lastMentioned > 0 ? lastMentioned : introducedAt,
+          sceneAppearances: chapters.isNotEmpty ? chapters : [introducedAt],
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+
+        _threads.add(thread);
+        debugPrint('Created thread: "$title" (${thread.type.name}) - Ch $startsAt to $endsAt, appears in: $chapters');
+      }
+
+      await _saveThreads();
+      notifyListeners();
+
+      debugPrint('Document analysis complete: ${_threads.length} threads loaded');
+
+      return {
+        'threadsFound': _threads.length,
+        'success': true,
+      };
+    } catch (e) {
+      debugPrint('Document thread analysis error: $e');
+      return {
+        'error': e.toString(),
+        'threadsFound': 0,
+      };
+    }
+  }
+
   /// AI-powered thread consolidation
   /// Analyzes all threads and removes duplicates/non-threads, merges similar ones
   Future<Map<String, dynamic>> consolidateThreadsWithAI(dynamic aiService) async {
