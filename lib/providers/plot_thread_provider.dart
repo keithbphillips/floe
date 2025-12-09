@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:crypto/crypto.dart';
 import '../models/plot_thread.dart';
 import '../models/scene_analysis.dart';
 
@@ -157,7 +158,14 @@ class PlotThreadProvider extends ChangeNotifier {
       _chapterSummaries = summariesMap.map((key, value) =>
         MapEntry(int.parse(key), value as Map<String, dynamic>)
       );
-      debugPrint('Loaded ${_chapterSummaries.length} chapter summaries');
+      final summariesWithHashes = _chapterSummaries.values.where((s) => s.containsKey('_content_hash')).length;
+      debugPrint('📖 Loaded ${_chapterSummaries.length} chapter summaries ($summariesWithHashes with hashes)');
+
+      // Debug: Show what we loaded for chapter 1
+      if (_chapterSummaries.containsKey(1)) {
+        final ch1Hash = _chapterSummaries[1]?['_content_hash'];
+        debugPrint('   Chapter 1 loaded with hash: ${ch1Hash?.toString().substring(0, 8) ?? 'null'}...');
+      }
     } else {
       _chapterSummaries = {};
     }
@@ -178,6 +186,13 @@ class PlotThreadProvider extends ChangeNotifier {
     final summariesMap = _chapterSummaries.map((key, value) =>
       MapEntry(key.toString(), value)
     );
+
+    // Debug: Show what we're saving for chapter 1
+    if (_chapterSummaries.containsKey(1)) {
+      final ch1Hash = _chapterSummaries[1]?['_content_hash'];
+      debugPrint('Saving Chapter 1 with hash: ${ch1Hash?.toString().substring(0, 8)}...');
+    }
+
     await prefs.setString(
       _getChapterSummariesKey(),
       json.encode(summariesMap),
@@ -430,22 +445,42 @@ class PlotThreadProvider extends ChangeNotifier {
             : fullDocumentText.length;
 
         final chapterText = fullDocumentText.substring(chapterStart, chapterEnd);
+        final chapterHash = _hashChapterContent(chapterText);
 
-        // Check if we have a cached summary for this chapter
-        if (_chapterSummaries.containsKey(chapterNumber)) {
-          debugPrint('Using cached summary for Chapter $chapterNumber');
-          chapterSummaries.add(_chapterSummaries[chapterNumber]!);
+        // Check if we have a cached summary for this chapter and if content hasn't changed
+        final cachedSummary = _chapterSummaries[chapterNumber];
+        final cachedHash = cachedSummary?['_content_hash'] as String?;
+        final isContentUnchanged = cachedHash == chapterHash;
+
+        debugPrint('Chapter $chapterNumber: cachedHash=${cachedHash?.substring(0, 8)}..., currentHash=${chapterHash.substring(0, 8)}..., match=$isContentUnchanged');
+
+        if (cachedSummary != null && isContentUnchanged) {
+          debugPrint('✓ Using cached summary for Chapter $chapterNumber (content unchanged)');
+          chapterSummaries.add(cachedSummary);
           _analysisProgress = i + 1;
           notifyListeners();
+
+          // Small delay to allow UI to show progress
+          await Future.delayed(const Duration(milliseconds: 100));
         } else {
-          debugPrint('Analyzing Chapter $chapterNumber (${chapterText.length} chars)...');
+          if (cachedSummary != null && !isContentUnchanged) {
+            debugPrint('⟳ Chapter $chapterNumber content changed - regenerating summary');
+          } else {
+            debugPrint('⊕ Analyzing Chapter $chapterNumber (${chapterText.length} chars)...');
+          }
 
           final summary = await aiService.analyzeChapterForSummary(chapterText, chapterNumber);
 
           if (summary != null) {
+            // Add content hash to summary for future change detection
+            summary['_content_hash'] = chapterHash;
             _chapterSummaries[chapterNumber] = summary;
             chapterSummaries.add(summary);
-            debugPrint('✓ Chapter $chapterNumber summarized');
+
+            // Verify the hash was actually stored
+            final verifyHash = _chapterSummaries[chapterNumber]?['_content_hash'];
+            debugPrint('✓ Chapter $chapterNumber summarized (hash: ${chapterHash.substring(0, 8)}... stored)');
+            debugPrint('   Verification: hash in memory = ${verifyHash?.toString().substring(0, 8)}...');
 
           _analysisProgress = i + 1;
           notifyListeners();
@@ -466,6 +501,7 @@ class PlotThreadProvider extends ChangeNotifier {
 
       // Save chapter summaries
       await _saveChapterSummaries();
+      debugPrint('💾 Saved ${_chapterSummaries.length} chapter summaries with hashes to disk');
 
       debugPrint('Phase 1 complete: ${chapterSummaries.length} chapter summaries generated');
 
@@ -971,5 +1007,19 @@ class PlotThreadProvider extends ChangeNotifier {
       default:
         return PlotThreadType.other;
     }
+  }
+
+  /// Calculate hash of chapter content for change detection
+  /// Normalizes line endings and whitespace to ensure consistent hashing
+  String _hashChapterContent(String chapterText) {
+    // Normalize text: remove CR characters, normalize whitespace, trim
+    final normalized = chapterText
+        .replaceAll('\r\n', '\n')  // Convert CRLF to LF
+        .replaceAll('\r', '\n')     // Convert remaining CR to LF
+        .trim();
+
+    final bytes = utf8.encode(normalized);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
   }
 }
