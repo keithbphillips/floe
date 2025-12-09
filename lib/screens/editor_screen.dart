@@ -765,33 +765,35 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
           children: [
             // Main editor area
             Expanded(
-              child: Column(
+              child: Stack(
                 children: [
-                  // Thread timeline strip (above bubble chart)
-                  if (!_isFullscreen)
-                    ThreadTimelineStrip(
-                      totalScenes: _getTotalChapters(document.content),
-                      currentSceneIndex: context.watch<PlotThreadProvider>().currentSceneNumber - 1,
-                      scrollController: _bubbleScrollController,
-                      onSceneClick: (sceneIndex) {
-                        // Navigate to the clicked chapter
-                        final chapterNumber = sceneIndex + 1; // Convert back to 1-based
-                        _navigateToChapter(document.content, chapterNumber);
-                      },
-                      onThreadClick: (thread) {
-                        // Switch to Plot Threads tab when a thread is clicked
-                        setState(() {
-                          _rightPanelTabIndex = 1; // Plot Threads tab
-                        });
-                      },
-                    ),
+                  Column(
+                    children: [
+                      // Thread timeline strip (above bubble chart)
+                      if (!_isFullscreen)
+                        ThreadTimelineStrip(
+                          totalScenes: _getTotalChapters(document.content),
+                          currentSceneIndex: context.watch<PlotThreadProvider>().currentSceneNumber - 1,
+                          scrollController: _bubbleScrollController,
+                          onSceneClick: (sceneIndex) {
+                            // Navigate to the clicked chapter
+                            final chapterNumber = sceneIndex + 1; // Convert back to 1-based
+                            _navigateToChapter(document.content, chapterNumber);
+                          },
+                          onThreadClick: (thread) {
+                            // Switch to Plot Threads tab when a thread is clicked
+                            setState(() {
+                              _rightPanelTabIndex = 1; // Plot Threads tab
+                            });
+                          },
+                        ),
 
-                  // Bubble chart at the top
-                  if (!_isFullscreen)
-                    StructureBubbleChart(
-                      documentContent: document.content,
-                      currentCursorPosition: _currentCursorPosition,
-                      scrollController: _bubbleScrollController,
+                      // Bubble chart at the top
+                      if (!_isFullscreen)
+                        StructureBubbleChart(
+                          documentContent: document.content,
+                          currentCursorPosition: _currentCursorPosition,
+                          scrollController: _bubbleScrollController,
                       onNavigate: (position) {
                         // Cancel any pending scroll adjustment
                         _navigationScrollTimer?.cancel();
@@ -969,8 +971,13 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
                         onClose: () => setState(() => _showWordCount = false),
                       ),
                     ),
+                      ],
+                    ),
+                  ),
+                    ],
+                  ),
 
-                  // File menu (shown on Escape key)
+                  // File menu (overlays the timeline/bubble area)
                   if (_showFileMenu)
                     Positioned(
                       top: 20,
@@ -983,15 +990,12 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
                         },
                       ),
                     ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
 
             // Right margin - Scene info panel (always visible)
-            if (!_isFullscreen)
+                if (!_isFullscreen)
               Container(
                 width: 340,
                 decoration: BoxDecoration(
@@ -1021,11 +1025,35 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
                           ),
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          _buildTab('Scene Analysis', 0),
-                          _buildTab('Plot Threads', 1),
-                        ],
+                      child: IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // File menu button
+                            IconButton(
+                              icon: const Icon(Icons.menu, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  _showFileMenu = !_showFileMenu;
+                                });
+                              },
+                              tooltip: 'File Menu',
+                              padding: const EdgeInsets.all(8),
+                              constraints: const BoxConstraints(),
+                            ),
+                            // Settings button (gear icon)
+                            IconButton(
+                              icon: const Icon(Icons.settings, size: 18),
+                              onPressed: _showSettings,
+                              tooltip: 'Settings',
+                              padding: const EdgeInsets.all(8),
+                              constraints: const BoxConstraints(),
+                            ),
+                            const SizedBox(width: 8),
+                            _buildTab('Scene Analysis', 0),
+                            _buildTab('Plot Threads', 1),
+                          ],
+                        ),
                       ),
                     ),
                     // Tab Content

@@ -385,7 +385,7 @@ class _StructureBubbleChartState extends State<StructureBubbleChart> {
     final maxBubbleSize = 32.0;
 
     return Container(
-      height: 60,
+      height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       decoration: BoxDecoration(
         color: isDark ? Colors.grey[900] : Colors.grey[50],
