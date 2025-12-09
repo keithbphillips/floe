@@ -434,25 +434,37 @@ class SceneAnalyzerProvider extends ChangeNotifier {
 
   /// Load cached analysis for a specific scene
   void loadSceneAnalysis(String fullText, int cursorPosition) {
+    // Try scene-level ID first
     final sceneId = _generateSceneId(fullText, cursorPosition);
 
-    if (_currentSceneId == sceneId && _currentAnalysis != null) {
+    // Also try chapter-level ID as fallback (for chapter-level analyses)
+    final chapterId = _generateSceneId(fullText, cursorPosition, isChapterLevel: true);
+
+    // Determine which ID to use based on what's available in cache
+    String? idToUse;
+    if (_sceneAnalyses.containsKey(sceneId)) {
+      idToUse = sceneId;
+    } else if (_sceneAnalyses.containsKey(chapterId) && chapterId != sceneId) {
+      idToUse = chapterId;
+    }
+
+    if (_currentSceneId == idToUse && _currentAnalysis != null && idToUse != null) {
       // Already showing this scene's analysis
       return;
     }
 
-    _currentSceneId = sceneId;
+    _currentSceneId = idToUse;
 
-    if (_sceneAnalyses.containsKey(sceneId)) {
-      _currentAnalysis = _sceneAnalyses[sceneId];
+    if (idToUse != null && _sceneAnalyses.containsKey(idToUse)) {
+      _currentAnalysis = _sceneAnalyses[idToUse];
       _error = null;
-      debugPrint('Loaded cached analysis for $sceneId');
+      debugPrint('Loaded cached analysis for $idToUse');
       notifyListeners();
     } else {
       // No cached analysis for this scene
       _currentAnalysis = null;
       _error = null;
-      debugPrint('No cached analysis found for $sceneId');
+      debugPrint('No cached analysis found for $sceneId or $chapterId');
       notifyListeners();
     }
   }
