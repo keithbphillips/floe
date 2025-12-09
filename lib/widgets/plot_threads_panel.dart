@@ -607,6 +607,9 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
     );
 
     if (confirmed == true && context.mounted) {
+      // Capture messenger before showing dialog
+      final scaffoldMessenger = ScaffoldMessenger.of(context);
+
       // Show loading indicator
       showDialog(
         context: context,
@@ -643,7 +646,7 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
           final merged = result['merged'] ?? 0;
           final kept = result['kept'] ?? 0;
 
-          ScaffoldMessenger.of(context).showSnackBar(
+          scaffoldMessenger.showSnackBar(
             SnackBar(
               content: Text(
                 'Consolidation complete: $removed removed, $merged merged, $kept threads remaining',
@@ -656,7 +659,7 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
       } catch (e) {
         if (context.mounted) {
           Navigator.of(context).pop(); // Close loading dialog
-          ScaffoldMessenger.of(context).showSnackBar(
+          scaffoldMessenger.showSnackBar(
             SnackBar(
               content: Text('Consolidation failed: $e'),
               backgroundColor: Colors.red,
@@ -776,6 +779,9 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
               if (thread.aiSummary == null || thread.aiSummary!.isEmpty) ...[
                 OutlinedButton.icon(
                   onPressed: () async {
+                    // Capture messenger before showing dialog
+                    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
                     // Show loading
                     showDialog(
                       context: context,
@@ -812,7 +818,7 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
                           Navigator.of(context).pop();
                           _showThreadDetailsDialog(context, provider.threads.firstWhere((t) => t.id == thread.id), provider);
                         } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          scaffoldMessenger.showSnackBar(
                             const SnackBar(
                               content: Text('Failed to generate summary. Make sure chapter summaries exist.'),
                               backgroundColor: Colors.orange,
@@ -823,7 +829,7 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
                     } catch (e) {
                       if (context.mounted) {
                         Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        scaffoldMessenger.showSnackBar(
                           SnackBar(
                             content: Text('Error: $e'),
                             backgroundColor: Colors.red,
@@ -1032,20 +1038,67 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
     );
 
     if (confirmed == true && context.mounted) {
-      // Show loading indicator
+      // Capture provider reference and messenger before showing dialog
+      final threadProvider = context.read<PlotThreadProvider>();
+      final scaffoldMessenger = ScaffoldMessenger.of(context);
+      bool dialogClosed = false;
+
+      // Show loading indicator with progress bar
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Expanded(
-                child: Text('AI is analyzing full document for plot threads...\nThis may take 30-90 seconds.'),
-              ),
-            ],
+        builder: (dialogContext) => AlertDialog(
+          content: Consumer<PlotThreadProvider>(
+            builder: (context, provider, child) {
+              final progress = provider.analysisTotalChapters > 0
+                  ? provider.analysisProgress / provider.analysisTotalChapters
+                  : 0.0;
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'AI is analyzing full document for plot threads...',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 16),
+                  LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 8,
+                  ),
+                  const SizedBox(height: 8),
+                  if (provider.analysisTotalChapters > 0)
+                    Text(
+                      'Analyzing chapter ${provider.analysisProgress} of ${provider.analysisTotalChapters}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'This may take 30-90 seconds.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[500],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                threadProvider.cancelAnalysis();
+                dialogClosed = true;
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('Cancel'),
+            ),
+          ],
         ),
       );
 
@@ -1067,12 +1120,13 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
           aiService,
         );
 
-        if (context.mounted) {
+        // Only close dialog and show snackbar if dialog wasn't already closed by cancel
+        if (!dialogClosed && context.mounted) {
           Navigator.of(context).pop(); // Close loading dialog
 
           if (result['success'] == true) {
             final threadsFound = result['threadsFound'] ?? 0;
-            ScaffoldMessenger.of(context).showSnackBar(
+            scaffoldMessenger.showSnackBar(
               SnackBar(
                 content: Text(
                   'Analysis complete: $threadsFound plot threads identified',
@@ -1083,7 +1137,7 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
             );
           } else {
             final error = result['error'] ?? 'Unknown error';
-            ScaffoldMessenger.of(context).showSnackBar(
+            scaffoldMessenger.showSnackBar(
               SnackBar(
                 content: Text('Analysis failed: $error'),
                 backgroundColor: Colors.red,
@@ -1093,9 +1147,9 @@ class _PlotThreadsPanelState extends State<PlotThreadsPanel> {
           }
         }
       } catch (e) {
-        if (context.mounted) {
+        if (!dialogClosed && context.mounted) {
           Navigator.of(context).pop(); // Close loading dialog
-          ScaffoldMessenger.of(context).showSnackBar(
+          scaffoldMessenger.showSnackBar(
             SnackBar(
               content: Text('Analysis failed: $e'),
               backgroundColor: Colors.red,
