@@ -462,6 +462,21 @@ class _ThreadTimelinePainter extends CustomPainter {
       }
     }
 
+    // Draw vertical cursor line at current scene position
+    final currentScenePosition = ((currentSceneIndex + 1) / maxScene) * totalWidth;
+    if (currentScenePosition >= scrollOffset && currentScenePosition <= scrollOffset + size.width) {
+      final cursorPaint = Paint()
+        ..color = Colors.white.withOpacity(0.6)
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke;
+
+      canvas.drawLine(
+        Offset(currentScenePosition, 0),
+        Offset(currentScenePosition, size.height),
+        cursorPaint,
+      );
+    }
+
     canvas.restore();
   }
 
