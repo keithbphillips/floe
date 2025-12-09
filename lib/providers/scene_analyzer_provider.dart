@@ -372,7 +372,7 @@ class SceneAnalyzerProvider extends ChangeNotifier {
 
     final docDir = path.dirname(_currentDocumentPath!);
     final docName = path.basenameWithoutExtension(_currentDocumentPath!);
-    final storageDir = path.join(docDir, '.justwrite');
+    final storageDir = path.join(docDir, '.floe');
 
     return path.join(storageDir, '${docName}_scene_analyses.json');
   }
@@ -413,7 +413,7 @@ class SceneAnalyzerProvider extends ChangeNotifier {
       final file = File(storagePath);
       final storageDir = file.parent;
 
-      // Create .justwrite directory if it doesn't exist
+      // Create .floe directory if it doesn't exist
       if (!await storageDir.exists()) {
         await storageDir.create(recursive: true);
       }
