@@ -95,14 +95,25 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
                     ? null
                     : () {
                         final document = context.read<DocumentProvider>();
-                        final sceneText = analyzer.extractCurrentScene(
+
+                        // Detect if cursor is on a chapter bubble (at chapter start)
+                        final isChapterBubble = _isAtChapterStart(
                           document.content,
                           widget.currentCursorPosition,
                         );
+
+                        // Extract text based on whether it's a chapter or scene
+                        final textToAnalyze = analyzer.extractCurrentScene(
+                          document.content,
+                          widget.currentCursorPosition,
+                          extractFullChapter: isChapterBubble,
+                        );
+
                         analyzer.analyzeScene(
-                          sceneText,
+                          textToAnalyze,
                           fullText: document.content,
                           cursorPosition: widget.currentCursorPosition,
+                          isChapterLevel: isChapterBubble,
                         );
                       },
                 icon: analyzer.isAnalyzing
@@ -690,6 +701,31 @@ class _SceneInfoPanelState extends State<SceneInfoPanel> {
     } else {
       return '${diff.inDays}d ago';
     }
+  }
+
+  /// Check if cursor is at the start of a chapter (within first 10 chars after "Chapter X")
+  /// This helps determine if user clicked a chapter bubble vs a scene bubble
+  bool _isAtChapterStart(String fullText, int cursorPosition) {
+    final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
+    final chapterMatches = chapterPattern.allMatches(fullText).toList();
+
+    if (chapterMatches.isEmpty) {
+      return false; // No chapters, so can't be at chapter start
+    }
+
+    // Check if cursor is near the start of any chapter
+    for (final match in chapterMatches) {
+      final chapterStart = match.start;
+      final chapterHeadingEnd = fullText.indexOf('\n', chapterStart);
+      final chapterContentStart = chapterHeadingEnd != -1 ? chapterHeadingEnd + 1 : chapterStart;
+
+      // If cursor is within first 10 characters of chapter content, consider it a chapter bubble click
+      if (cursorPosition >= chapterStart && cursorPosition <= chapterContentStart + 10) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /// Generate a unique identifier for a scene based on its position in the document

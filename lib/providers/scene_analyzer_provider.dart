@@ -60,11 +60,13 @@ class SceneAnalyzerProvider extends ChangeNotifier {
   /// Analyze the current scene
   /// [existingPlotThreads] is a list of existing plot thread titles to help AI avoid duplicates
   /// [fullText] and [cursorPosition] are used to generate scene ID for storage
+  /// [isChapterLevel] indicates whether this is a chapter-level analysis (vs scene-level)
   Future<void> analyzeScene(
     String sceneText, {
     List<String>? existingPlotThreads,
     String? fullText,
     int? cursorPosition,
+    bool isChapterLevel = false,
   }) async {
     if (sceneText.trim().isEmpty) return;
 
@@ -85,7 +87,8 @@ class SceneAnalyzerProvider extends ChangeNotifier {
 
       if (_aiAvailable && _aiService != null) {
         // Use AI for full analysis
-        debugPrint('=== Analyzing scene with $_currentProvider (${sceneText.length} chars) ===');
+        final analysisType = isChapterLevel ? 'chapter' : 'scene';
+        debugPrint('=== Analyzing $analysisType with $_currentProvider (${sceneText.length} chars) ===');
         if (existingPlotThreads != null && existingPlotThreads.isNotEmpty) {
           debugPrint('Passing ${existingPlotThreads.length} existing plot threads to AI');
         }
@@ -126,11 +129,11 @@ class SceneAnalyzerProvider extends ChangeNotifier {
 
       // Save the analysis to cache if we have the necessary context
       if (_currentAnalysis != null && fullText != null && cursorPosition != null) {
-        final sceneId = _generateSceneId(fullText, cursorPosition);
+        final sceneId = _generateSceneId(fullText, cursorPosition, isChapterLevel: isChapterLevel);
         _currentSceneId = sceneId;
         _sceneAnalyses[sceneId] = _currentAnalysis!;
         await _saveSceneAnalyses();
-        debugPrint('Saved analysis for scene $sceneId');
+        debugPrint('Saved analysis for $sceneId (${isChapterLevel ? "chapter-level" : "scene-level"})');
       }
 
       notifyListeners();
@@ -167,7 +170,8 @@ class SceneAnalyzerProvider extends ChangeNotifier {
   /// Extract current scene from document using the same logic as bubble chart
   /// Chapters always contain scenes - either a single scene if no scene breaks,
   /// or multiple scenes if scene breaks exist within the chapter
-  String extractCurrentScene(String fullText, int cursorPosition) {
+  /// If [extractFullChapter] is true, returns the entire chapter content instead of individual scene
+  String extractCurrentScene(String fullText, int cursorPosition, {bool extractFullChapter = false}) {
     if (fullText.isEmpty) return '';
 
     final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
@@ -210,13 +214,19 @@ class SceneAnalyzerProvider extends ChangeNotifier {
             : fullText.length;
 
         if (cursorPosition >= chapterStart && cursorPosition < chapterEnd) {
-          // Cursor is in this chapter - now find the scene within it
+          // Cursor is in this chapter
           final chapterNumber = chapterMatch.group(1);
 
           // Get chapter content (excluding chapter heading)
           final chapterHeadingEnd = fullText.indexOf('\n', chapterStart);
           final chapterContentStart = chapterHeadingEnd != -1 ? chapterHeadingEnd + 1 : chapterStart;
           final chapterContent = fullText.substring(chapterContentStart, chapterEnd);
+
+          // If requesting full chapter, return it now
+          if (extractFullChapter) {
+            debugPrint('Extracted full Ch $chapterNumber: ${chapterContent.length} chars');
+            return chapterContent.trim();
+          }
 
           // Find scene breaks within this chapter
           final scenesInChapter = sceneBreakPattern.allMatches(chapterContent).toList();
@@ -261,7 +271,8 @@ class SceneAnalyzerProvider extends ChangeNotifier {
   }
 
   /// Generate a unique identifier for a scene based on its position in the document
-  String _generateSceneId(String fullText, int cursorPosition) {
+  /// If [isChapterLevel] is true, returns a chapter-level ID (e.g., 'ch7') instead of scene-level (e.g., 'ch7_scene_2')
+  String _generateSceneId(String fullText, int cursorPosition, {bool isChapterLevel = false}) {
     final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
     final chapterMatches = chapterPattern.allMatches(fullText).toList();
     final sceneBreakPattern = RegExp(r'\n\s*\n\s*\n');
@@ -297,6 +308,11 @@ class SceneAnalyzerProvider extends ChangeNotifier {
 
         if (cursorPosition >= chapterStart && cursorPosition < chapterEnd) {
           final chapterNumber = chapterMatch.group(1);
+
+          // If requesting chapter-level ID, return it now
+          if (isChapterLevel) {
+            return 'ch$chapterNumber';
+          }
 
           // Get chapter content (excluding chapter heading)
           final chapterHeadingEnd = fullText.indexOf('\n', chapterStart);
