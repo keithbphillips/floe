@@ -111,6 +111,10 @@ class _EditorScreenState extends State<EditorScreen> with WindowListener {
         final document = context.read<DocumentProvider>();
         final analyzer = context.read<SceneAnalyzerProvider>();
         analyzer.loadSceneAnalysis(document.content, newCursorPos);
+
+        // Update current scene number in PlotThreadProvider for timeline indicator
+        final plotThreads = context.read<PlotThreadProvider>();
+        plotThreads.updateCurrentSceneFromCursor(document.content, newCursorPos);
       }
     });
   }

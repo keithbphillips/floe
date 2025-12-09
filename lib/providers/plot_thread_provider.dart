@@ -29,6 +29,40 @@ class PlotThreadProvider extends ChangeNotifier {
   int get currentSceneNumber => _currentSceneNumber;
   String? get currentDocumentPath => _currentDocumentPath;
 
+  /// Update the current scene/chapter number based on cursor position
+  void updateCurrentSceneFromCursor(String fullText, int cursorPosition) {
+    final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
+    final chapterMatches = chapterPattern.allMatches(fullText).toList();
+
+    if (chapterMatches.isEmpty) {
+      _currentSceneNumber = 1;
+      notifyListeners();
+      return;
+    }
+
+    // Find which chapter contains the cursor
+    for (int chapterIdx = 0; chapterIdx < chapterMatches.length; chapterIdx++) {
+      final chapterMatch = chapterMatches[chapterIdx];
+      final chapterStart = chapterMatch.start;
+      final chapterEnd = chapterIdx < chapterMatches.length - 1
+          ? chapterMatches[chapterIdx + 1].start
+          : fullText.length;
+
+      if (cursorPosition >= chapterStart && cursorPosition < chapterEnd) {
+        final chapterNumber = int.tryParse(chapterMatch.group(1) ?? '1') ?? 1;
+        if (_currentSceneNumber != chapterNumber) {
+          _currentSceneNumber = chapterNumber;
+          notifyListeners();
+        }
+        return;
+      }
+    }
+
+    // Fallback
+    _currentSceneNumber = 1;
+    notifyListeners();
+  }
+
   /// Get active threads (not resolved or abandoned)
   List<PlotThread> get activeThreads => _threads
       .where((t) =>
