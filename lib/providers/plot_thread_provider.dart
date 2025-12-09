@@ -21,6 +21,12 @@ class PlotThreadProvider extends ChangeNotifier {
   // Cache chapter summaries
   Map<int, Map<String, dynamic>> _chapterSummaries = {};
 
+  // Progress tracking for document analysis
+  int _analysisProgress = 0;
+  int _analysisTotalChapters = 0;
+  bool _isAnalyzing = false;
+  bool _analysisCancelled = false;
+
   PlotThreadProvider() {
     // Don't load threads in constructor - wait for document to be set
   }
@@ -28,6 +34,14 @@ class PlotThreadProvider extends ChangeNotifier {
   List<PlotThread> get threads => _threads;
   int get currentSceneNumber => _currentSceneNumber;
   String? get currentDocumentPath => _currentDocumentPath;
+  int get analysisProgress => _analysisProgress;
+  int get analysisTotalChapters => _analysisTotalChapters;
+  bool get isAnalyzing => _isAnalyzing;
+
+  void cancelAnalysis() {
+    _analysisCancelled = true;
+    notifyListeners();
+  }
 
   /// Update the current scene/chapter number based on cursor position
   void updateCurrentSceneFromCursor(String fullText, int cursorPosition) {
@@ -371,22 +385,43 @@ class PlotThreadProvider extends ChangeNotifier {
     debugPrint('=== Starting two-phase document analysis ===');
 
     try {
+      // Initialize progress tracking
+      _isAnalyzing = true;
+      _analysisProgress = 0;
+      _analysisTotalChapters = 0;
+      _analysisCancelled = false;
+      notifyListeners();
+
       // Phase 1: Extract chapters and generate summaries
       final chapterPattern = RegExp(r'(?:^|\n)Chapter\s+(\d+)', caseSensitive: false);
       final chapterMatches = chapterPattern.allMatches(fullDocumentText).toList();
 
       if (chapterMatches.isEmpty) {
         debugPrint('No chapters found - falling back to direct analysis');
+        _isAnalyzing = false;
+        notifyListeners();
         return analyzeDocumentThreads(fullDocumentText, aiService);
       }
 
       final totalChapters = chapterMatches.length;
+      _analysisTotalChapters = totalChapters;
+      notifyListeners();
       debugPrint('Found $totalChapters chapters to analyze');
 
       // Extract and summarize each chapter
       final chapterSummaries = <Map<String, dynamic>>[];
 
       for (int i = 0; i < chapterMatches.length; i++) {
+        // Check if analysis was cancelled
+        if (_analysisCancelled) {
+          debugPrint('Analysis cancelled by user');
+          _isAnalyzing = false;
+          _analysisProgress = 0;
+          _analysisTotalChapters = 0;
+          notifyListeners();
+          return {'error': 'Analysis cancelled by user', 'threadsFound': 0};
+        }
+
         final chapterMatch = chapterMatches[i];
         final chapterNumber = int.tryParse(chapterMatch.group(1) ?? '0') ?? (i + 1);
         final chapterStart = chapterMatch.start;
@@ -400,6 +435,8 @@ class PlotThreadProvider extends ChangeNotifier {
         if (_chapterSummaries.containsKey(chapterNumber)) {
           debugPrint('Using cached summary for Chapter $chapterNumber');
           chapterSummaries.add(_chapterSummaries[chapterNumber]!);
+          _analysisProgress = i + 1;
+          notifyListeners();
         } else {
           debugPrint('Analyzing Chapter $chapterNumber (${chapterText.length} chars)...');
 
@@ -409,6 +446,9 @@ class PlotThreadProvider extends ChangeNotifier {
             _chapterSummaries[chapterNumber] = summary;
             chapterSummaries.add(summary);
             debugPrint('✓ Chapter $chapterNumber summarized');
+
+          _analysisProgress = i + 1;
+          notifyListeners();
           } else {
             debugPrint('✗ Failed to summarize Chapter $chapterNumber');
             // Continue with other chapters even if one fails
@@ -526,6 +566,11 @@ class PlotThreadProvider extends ChangeNotifier {
       }
 
       await _saveThreads();
+
+      // Reset progress tracking
+      _isAnalyzing = false;
+      _analysisProgress = 0;
+      _analysisTotalChapters = 0;
       notifyListeners();
 
       debugPrint('Two-phase analysis complete: ${_threads.length} threads loaded from ${chapterSummaries.length} summaries');
@@ -537,6 +582,13 @@ class PlotThreadProvider extends ChangeNotifier {
       };
     } catch (e) {
       debugPrint('Two-phase thread analysis error: $e');
+
+      // Reset progress tracking on error
+      _isAnalyzing = false;
+      _analysisProgress = 0;
+      _analysisTotalChapters = 0;
+      notifyListeners();
+
       return {
         'error': e.toString(),
         'threadsFound': 0,
